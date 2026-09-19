@@ -397,16 +397,22 @@ if (!fs.existsSync(TOKEN_FILE)) fs.writeFileSync(TOKEN_FILE, crypto.randomBytes(
 const HELPER_TOKEN = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
 const helper = { seen: 0, info: {}, waiting: null };   // seen = last poll (ms); info = what the helper said about itself; waiting = its parked poll
 const jobs = new Map(), queue = [];                     // job id -> { id, pdf, printer, res, timer }; queue = ids not yet collected
-const helperOnline = () => Date.now() - helper.seen < 45000;
+// connected = heard from lately, or out printing a job it collected (it cannot poll while it prints, unless it pings)
+const helperBusy = () => [...jobs.values()].some(j => j.handed);
+const helperOnline = () => Date.now() - helper.seen < 45000 || helperBusy();
 const helperAuth = (req, res, next) => {
   const a = Buffer.from(String(req.get('X-Token') || '')), b = Buffer.from(HELPER_TOKEN);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.status(403).json({ error: 'bad token' });
   helper.seen = Date.now(); next();
 };
-const hand = (res, job) => { res.setHeader('Content-Type', 'application/pdf'); res.setHeader('X-Job', job.id); res.setHeader('X-Printer', encodeURIComponent(job.printer)); res.send(job.pdf); };
+// a job has 175 s in all, to be collected (others may be ahead of it) and printed: Apache gives a proxied request up at 180 s
+const arm = (job, ms, msg) => { clearTimeout(job.timer); job.timer = setTimeout(() => finish(job, 504, { error: msg }), ms); };
+const hand = (res, job) => { job.handed = Date.now(); arm(job, Math.max(5000, 175000 - (job.handed - job.start)), 'the print helper did not report back'); res.setHeader('Content-Type', 'application/pdf'); res.setHeader('X-Job', job.id); res.setHeader('X-Printer', encodeURIComponent(job.printer)); res.send(job.pdf); };
 const finish = (job, code, body) => { clearTimeout(job.timer); jobs.delete(job.id); const i = queue.indexOf(job.id); if (i >= 0) queue.splice(i, 1); if (!job.res.headersSent) job.res.status(code).json(body); };
 // POST /api/helper/hello { printers, backend, version }: the helper introduces itself on start and now and then
 app.post('/api/helper/hello', helperAuth, (req, res) => { helper.info = { printers: req.body.printers || [], backend: req.body.backend || null, version: req.body.version || '' }; res.json({ ok: true }); });
+// POST /api/helper/ping: sent while a print is in progress, so the helper still counts as connected
+app.post('/api/helper/ping', helperAuth, (req, res) => res.json({ ok: true }));
 // GET /api/helper/next: long poll; the next job as a PDF (X-Job, X-Printer), or 204 after 25 s with nothing to print
 app.get('/api/helper/next', helperAuth, (req, res) => {
   if (helper.waiting) { clearTimeout(helper.waiting.timer); helper.waiting.res.status(204).end(); helper.waiting = null; }
@@ -420,8 +426,8 @@ app.post('/api/helper/done', helperAuth, (req, res) => {
   if (job) req.body.ok ? finish(job, 200, { ok: true, pages: req.body.pages || job.pages, printer: job.printer, backend: req.body.backend }) : finish(job, 500, { error: req.body.error || 'print failed' });
   res.json({ ok: true });
 });
-// GET /api/print/status -> { online, printers, backend, version } for the page's Printer… dialog
-app.get('/api/print/status', (req, res) => res.json({ online: helperOnline(), ...helper.info }));
+// GET /api/print/status -> { online, busy, waiting, printers, backend, version } for the page's Printer… dialog
+app.get('/api/print/status', (req, res) => res.json({ online: helperOnline(), busy: helperBusy(), waiting: queue.length, ...helper.info }));
 // POST /api/print?printer=NAME[&pages=N], body = the PDF: answers once the helper has printed it (or could not)
 app.post('/api/print', express.raw({ type: 'application/pdf', limit: '50mb' }), (req, res) => {
   const printer = String(req.query.printer || '');
@@ -429,7 +435,7 @@ app.post('/api/print', express.raw({ type: 'application/pdf', limit: '50mb' }), 
   if (!Buffer.isBuffer(req.body) || req.body.subarray(0, 4).toString() !== '%PDF') return res.status(400).json({ error: 'body is not a PDF' });
   if (!helperOnline()) return res.status(503).json({ error: 'the print helper is not connected (is the PC with the label printer on?)' });
   const job = { id: crypto.randomBytes(8).toString('hex'), pdf: req.body, printer, res, pages: +req.query.pages || 0 };   // pages: the page's own count, for when the helper cannot count them
-  job.timer = setTimeout(() => finish(job, 504, { error: 'the print helper did not report back' }), 170000);
+  job.start = Date.now(); arm(job, 175000, 'the print helper is busy and did not get to these labels; try again');
   jobs.set(job.id, job);
   if (helper.waiting) { const w = helper.waiting; helper.waiting = null; clearTimeout(w.timer); hand(w.res, job); } else queue.push(job.id);
 });

@@ -24,9 +24,9 @@ Endpoints when listening (CORS open, so a browser page served from elsewhere can
     GET  /                                  -> a tiny status page
 Python 3.8+ standard library only.
 """
-import argparse, json, os, shutil, subprocess, sys, tempfile, time, urllib.request, urllib.error
+import argparse, json, os, shutil, subprocess, sys, tempfile, threading, time, urllib.request, urllib.error
 from urllib.parse import unquote
-VERSION = '2026-09-18.1'   # shown by GET / and /printers and on startup; bump on every change
+VERSION = '2026-09-19.1'   # shown by GET / and /printers and on startup; bump on every change
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -55,14 +55,62 @@ def backend():
         exe = CANDIDATES[name]()
         if exe: return (name, exe)
     return (None, None)
+class QueueWatch:
+    """Samples a printer's Windows print queue a few times a second (one PowerShell process for the duration of a print), so the
+    helper can tell when Acrobat has handed its job over. jobs = number of jobs in the queue, spooling = one is still being written."""
+    def __init__(self, printer):
+        self.samples = []; self.p = None
+        if sys.platform != 'win32': return
+        cmd = ("$n='%s'; while($true){ try { $j=@(Get-PrintJob -PrinterName $n -ErrorAction Stop); "
+               "$s=@($j | Where-Object { \"$($_.JobStatus)\" -match 'Spooling' }).Count; \"$($j.Count) $s\" } catch { 'ERR' }; "
+               "Start-Sleep -Milliseconds 300 }") % printer.replace("'", "''")
+        try:
+            self.p = subprocess.Popen(['powershell', '-NoProfile', '-Command', cmd], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, creationflags=0x08000000)   # no console window
+            threading.Thread(target=self._read, daemon=True).start()
+        except Exception: self.p = None
+    def _read(self):
+        try:
+            for line in self.p.stdout:
+                a = line.split()
+                if len(a) == 2 and a[0].isdigit() and a[1].isdigit(): self.samples.append((int(a[0]), int(a[1])))
+        except Exception: pass
+    def close(self):
+        try:
+            if self.p: self.p.kill()
+        except Exception: pass
+
+def print_acrobat(exe, path, printer):
+    """Acrobat /t prints silently but never exits by itself, so waiting for it would hold every print up for minutes (and a driver
+    dialog such as "load the 18 mm tape" even longer). Instead: watch the queue until the job is in it and fully spooled, then close
+    that Acrobat. From there Windows owns the job; a tape dialog no longer concerns the helper."""
+    w = QueueWatch(printer); t0 = time.time()
+    while w.p and not w.samples and time.time() - t0 < 6: time.sleep(0.1)
+    base, start = (w.samples[-1][0] if w.samples else 0), len(w.samples)
+    p = subprocess.Popen([exe, '/n', '/t', path, printer])
+    seen = False; quiet = 0; t0 = time.time(); note = 'acrobat'
+    try:
+        if not w.samples:
+            note = 'acrobat (print queue could not be watched; waited 20 s)'; time.sleep(20)
+        else:
+            while time.time() - t0 < 60:
+                if p.poll() is not None: break
+                new = w.samples[start:]
+                if any(j > base for j, _ in new): seen = True
+                if seen:
+                    quiet = quiet + 1 if new and new[-1][1] == 0 else 0   # nothing spooling any more
+                    if quiet >= 4: break
+                time.sleep(0.3)
+            if not seen: note = 'acrobat (the job was not seen in the print queue within 60 s)'; log('%s WARNING: %s' % (time.strftime('%H:%M:%S'), note))
+            time.sleep(1.5)
+    finally:
+        w.close()
+        try: p.kill()
+        except Exception: pass
+    return (True, note)
+
 def print_pdf(name, exe, path, printer):
     """run the backend; returns (ok, message)"""
-    if name == 'acrobat':
-        # /t = print to the named printer silently; Acrobat stays open afterwards, so give it a moment and close it
-        p = subprocess.Popen([exe, '/n', '/t', path, printer])
-        try: p.wait(timeout=120)
-        except subprocess.TimeoutExpired: p.kill()
-        return (True, 'acrobat')
+    if name == 'acrobat': return print_acrobat(exe, path, printer)
     if name == 'gs':
         r = subprocess.run([exe, '-dBATCH', '-dNOPAUSE', '-dNoCancel', '-dNOSAFER', '-q', '-sDEVICE=mswinpr2', f'-sOutputFile=%printer%{printer}', path], capture_output=True, text=True, timeout=300)
         return (r.returncode == 0, (r.stderr or r.stdout).strip()[:300] or 'gs')
@@ -167,8 +215,16 @@ def poll(server, token):
             wait = 2
             if r.status != 200: r.read(); continue
             job, printer, data = r.headers.get('X-Job'), unquote(r.headers.get('X-Printer', '')), r.read()
+            # while it prints it cannot poll: a ping every 15 s tells the server it is busy, not gone
+            busy = threading.Event()
+            def pings():
+                while not busy.wait(15):
+                    try: call('/api/helper/ping', {'job': job}, timeout=20).read()
+                    except Exception: pass
+            threading.Thread(target=pings, daemon=True).start()
             try: ok, pages, name, msg = print_bytes(data, printer)
             except Exception as e: ok, pages, name, msg = False, 0, None, str(e)
+            finally: busy.set()
             log('%s job %s: %s %d page(s) to %s via %s%s' % (time.strftime('%H:%M:%S'), job, 'printed' if ok else 'FAILED', pages, printer, name, '' if ok else ': ' + msg))
             call('/api/helper/done', {'job': job, 'ok': ok, 'pages': pages, 'backend': name, 'error': None if ok else f'{name}: {msg}'}).read()
         except urllib.error.HTTPError as e:

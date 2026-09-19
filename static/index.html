@@ -657,7 +657,7 @@ function renderHelper() {
   const refresh = async () => {
     $('#hMsg').textContent = 'asking the server…';
     try { const j = await (await fetch('/api/print/status')).json(); fill(j.printers || []);
-      $('#hMsg').textContent = j.online ? `helper ${j.version || ''} connected · print program: ${j.backend || 'NONE FOUND'} · ${(j.printers || []).length} printers`
+      $('#hMsg').textContent = j.online ? `helper ${j.version || ''} connected${j.busy ? ', printing now' : ''}${j.waiting ? ` (${j.waiting} waiting)` : ''} · print program: ${j.backend || 'NONE FOUND'} · ${(j.printers || []).length} printers`
         : 'the print helper is not connected (it runs on the PC with the label printer)';
     } catch (e) { $('#hMsg').textContent = 'no answer from the server: ' + e.message; }
   };
