@@ -366,19 +366,28 @@ function binEl(id, entries) {
   dropZone(el, card => dropOnBin(card, id)); return el;
 }
 // ---- settings: the physical cabinets and the categories' drawer counts ----
+// tape width and label length for one cabinet, box or the loose bins; untouched defaults are not stored
+const labelCell = (i, label, kind) => { const z = M.cleanLabel(label, kind);
+  return `<span class="note">labels</span> <select class="sTape" data-i="${i}" data-kind="${kind}">${Object.keys(M.TAPES).map(t => `<option value="${t}" ${+t === z.tape ? 'selected' : ''}>${t} mm</option>`).join('')}</select> × <input type="number" class="sLen" data-i="${i}" min="${M.LABEL_LEN.min}" max="${M.LABEL_LEN.max}" value="${z.len}" style="width:56px"> mm`; };
 function renderSettings() {
   const lay = M.layoutOf(data), P = M.positions(data);
   let h = `<b>Cabinets</b><div class="note">In physical order; drawer numbering runs across them, category by category.</div><table>` +
     lay.cabinets.map((c, i) => `<tr><td><input class="sTitle" data-i="${i}" value="${c.title}" style="width:130px"></td><td><select class="sKind" data-i="${i}">${Object.entries(M.KINDS).map(([k, v]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${v.title}</option>`).join('')}</select>` +
       (M.KINDS[c.kind]?.bins ? ` <span class="note">bin letter</span> <input class="sPrefix" data-i="${i}" value="${M.boxPrefix(lay, i)}" maxlength="1" style="width:28px;text-transform:uppercase" title="its bins are this letter + number; B is for loose bins, I/M/W are the drawer categories">` : '') + `</td>` +
-      `<td><button type="button" class="sUp" data-i="${i}" title="move up">↑</button><button type="button" class="sDn" data-i="${i}" title="move down">↓</button><button type="button" class="sRm" data-i="${i}" title="remove">×</button></td></tr>`).join('') + `</table>
+      `<td>${labelCell(i, c.label, M.KINDS[c.kind]?.bins ? 'bin' : 'drawer')}</td><td><button type="button" class="sUp" data-i="${i}" title="move up">↑</button><button type="button" class="sDn" data-i="${i}" title="move down">↓</button><button type="button" class="sRm" data-i="${i}" title="remove">×</button></td></tr>`).join('') +
+    `<tr><td>Loose bins</td><td class="note">B-numbered, not in any box</td><td>${labelCell('loose', lay.loose?.label, 'bin')}</td><td></td></tr></table>
+    <div class="note">Labels: tape width × length. Changing a size makes those labels count as unprinted.</div>
     <div class="row"><button type="button" id="sAdd">Add cabinet</button></div>
     <h3>Drawers per category</h3><table>` +
     M.CABINETS.map((c, i) => { const r = P.ranges.find(r => r.id === c.id); return `<tr><td><i class="cab" style="display:inline-block;width:12px;height:12px;border-radius:6px;background:${c.color};margin-right:6px"></i>${c.title}</td><td>${i === M.CABINETS.length - 1 ? `<span class="note">the rest: ${r.count}</span>` : `<input type="number" min="0" class="sCount" data-id="${c.id}" value="${lay.counts[c.id] || 0}" style="width:70px">`}</td><td class="note">positions ${r.count ? `${r.start}–${r.start + r.count - 1}` : '(none)'}</td></tr>`; }).join('') + `</table>
     <div class="note">${P.drawers.length} drawer positions, ${P.bins.length} bin positions in all.</div>
     <div class="row"><button type="button" id="sSave">Save</button><button type="button" id="sClose">Close</button></div>`;
   const el = $('#settings'); el.innerHTML = h;
-  const read = () => { const l = M.layoutOf(data); l.cabinets = [...el.querySelectorAll('.sTitle')].map((t, i) => { const c = { ...l.cabinets[i], title: t.value.trim() || l.cabinets[i].title, kind: el.querySelector(`.sKind[data-i="${i}"]`).value }; delete c.first; const f = el.querySelector(`.sPrefix[data-i="${i}"]`); if (f) { const v = f.value.trim().toUpperCase(); if (M.BIN_LETTERS.includes(v)) c.prefix = v; } return c; }); el.querySelectorAll('.sCount').forEach(x => l.counts[x.dataset.id] = +x.value || 0); return l; };
+  const readLabel = (o, i) => { const t = el.querySelector(`.sTape[data-i="${i}"]`), n = el.querySelector(`.sLen[data-i="${i}"]`); if (!t) return;
+    const z = M.cleanLabel({ tape: t.value, len: n.value }, M.KINDS[o.kind]?.bins || i === 'loose' ? 'bin' : 'drawer'), def = M.LABEL_DEFAULT[M.KINDS[o.kind]?.bins || i === 'loose' ? 'bin' : 'drawer'];
+    if (z.tape === def.tape && z.len === def.len) delete o.label; else o.label = z; };
+  const read = () => { const l = M.layoutOf(data); l.cabinets = [...el.querySelectorAll('.sTitle')].map((t, i) => { const c = { ...l.cabinets[i], title: t.value.trim() || l.cabinets[i].title, kind: el.querySelector(`.sKind[data-i="${i}"]`).value }; delete c.first; const f = el.querySelector(`.sPrefix[data-i="${i}"]`); if (f) { const v = f.value.trim().toUpperCase(); if (M.BIN_LETTERS.includes(v)) c.prefix = v; } if (!!M.KINDS[c.kind]?.bins === !!M.KINDS[l.cabinets[i].kind]?.bins) readLabel(c, i); else delete c.label;   // drawers <-> bins: back to that kind's default size
+    return c; }); l.loose = { ...(l.loose || {}) }; readLabel(l.loose, 'loose'); if (!Object.keys(l.loose).length) delete l.loose; el.querySelectorAll('.sCount').forEach(x => l.counts[x.dataset.id] = +x.value || 0); return l; };
   const restage = l => { data.layout = l; renderSettings(); };
   el.querySelectorAll('.sUp').forEach(b => b.onclick = () => { const l = read(), i = +b.dataset.i; if (i > 0) [l.cabinets[i - 1], l.cabinets[i]] = [l.cabinets[i], l.cabinets[i - 1]]; restage(l); });
   el.querySelectorAll('.sDn').forEach(b => b.onclick = () => { const l = read(), i = +b.dataset.i; if (i < l.cabinets.length - 1) [l.cabinets[i + 1], l.cabinets[i]] = [l.cabinets[i], l.cabinets[i + 1]]; restage(l); });

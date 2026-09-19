@@ -79,6 +79,7 @@ td.cell:not(.have) .print, .card:not(.have) .print { visibility:hidden; }
 #helper label { display:block; margin:6px 0 2px; color:var(--ink2); font-size:12px; }
 #helper input, #helper select { width:100%; box-sizing:border-box; font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:4px; }
 #helper .row { display:flex; gap:8px; margin-top:10px; align-items:center; }
+#helper .note { font-size:12px; color:var(--ink2); margin:4px 0 6px; }
 #helper .msg { font-size:12px; color:var(--ink2); margin-top:6px; min-height:16px; }
 #types label { display:flex; align-items:center; gap:6px; padding:2px 0; cursor:pointer; }
 #types label svg { width:24px; height:24px; }
@@ -104,7 +105,7 @@ td.cell:not(.have) .print, .card:not(.have) .print { visibility:hidden; }
 .mobile #addLen, .mobile #addRow { display:none; }
 /* the stack never takes the pointer: if it grows up under the cursor the ⎙ would get mouseleave and the preview would flicker */
 #preview { position:fixed; right:14px; bottom:14px; background:#fff; border:1px solid var(--line); padding:6px; border-radius:6px; box-shadow:0 4px 18px rgba(0,0,0,.12); display:none; pointer-events:none; max-height:calc(100vh - 28px); overflow:hidden; }
-#preview img { display:block; width:430px; height:auto; }   /* 50 mm at the same scale for both tapes: 9 mm labels short, 18 mm labels tall */
+#preview img { display:block; width:430px; max-width:calc(100vw - 42px); height:auto; }   /* every label at one scale, 8.6 px per mm (50 mm = 430 px; showPreview sets the width of other lengths) */
 #preview img + img { margin-top:6px; }
 /* list pages: one line per label */
 table.list { border-spacing:0 4px; }
@@ -139,7 +140,7 @@ table.list .drawer { white-space:nowrap; }
   <button id="printSel" title="labels for the ticked lines">PDF: selected</button>
   <button id="addPage" title="a new page of free-form labels (connectors, test leads, …)">Add list page…</button>
   <button id="printDrawers">PDF: drawers…</button>
-  <button id="printBins" title="18 mm labels for the bins">PDF: bins…</button>
+  <button id="printBins" title="labels for the bins">PDF: bins…</button>
   <button id="printNew">PDF: unprinted</button>
   <button id="printAll">PDF: all</button>
   <button id="markPrinted">Mark all printed</button>
@@ -459,8 +460,10 @@ $('#addLen').onclick = () => {
 // direct printing goes through the server, which hands the PDF to helper/print-helper.py on the PC with the printer; the
 // choice of queues lives in this browser
 const HS = { get() { try { return JSON.parse(localStorage.getItem('helper') || '{}'); } catch (e) { return {}; } }, set(v) { try { localStorage.setItem('helper', JSON.stringify(v)); } catch (e) {} } };
+// the printer queue for each tape width: { 9: name, 12: name, 18: name } (older settings had one for drawers and one for bins)
+const queues = () => { const h = HS.get(); return h.queues || { 9: h.printer || '', 18: h.printerBin || '' }; };
 async function sendToPrinter(blob, n, tape = '9') {
-  const h = HS.get(), printer = tape === '18' ? h.printerBin : h.printer;
+  const printer = queues()[tape];
   if (!printer) { alert(`No printer queue is set for ${tape} mm labels (Printer…). Downloading the PDF instead.`); return false; }
   status(`sending ${n} label${n == 1 ? '' : 's'} to ${printer}…`);
   try {
@@ -490,25 +493,31 @@ function printCell(key, x, y) {
   $('#popGo').onclick = () => { const chosen = [...$('#pop').querySelectorAll('input:checked')].map(i => slots[+i.dataset.i].slot); closePop(); if (chosen.length) printKeys(null, { page: pageId, keys: [key], slots: chosen }); };
   $('#popClose').onclick = closePop; placePop(x, y);
 }
-// drawer labels (9 mm) come first; when the request also touches bins the server names them and their 18 mm labels follow
+// one request can span several tape widths (each cabinet or box sets its own): the server answers with the narrowest and
+// names the rest in X-Tapes, which are fetched one by one. Returns the first response (for its X-Bins), or null on failure
+async function labelsByTape(body) {
+  const ask = b => fetch('/api/labels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+  const r = await ask(body);
+  if (!r.ok) { status(''); alert((await r.json()).error || 'failed'); return null; }
+  if (r.status === 204) return r;
+  const first = r.headers.get('X-Tape'), rest = (r.headers.get('X-Tapes') || '').split(',').filter(t => t && t !== first);
+  await deliver(r);
+  for (const tape of rest) { const rt = await ask({ ...body, tape: +tape }); if (!rt.ok) { status(''); alert((await rt.json()).error || 'failed'); return null; } await deliver(rt); }
+  return r;
+}
+// drawer labels come first; when the request also touches bins the server names them and their labels follow
 async function printKeys(keys, body) {
   status('rendering…');
-  const r = await fetch('/api/labels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || { page: pageId, keys }) });
-  if (!r.ok) { status(''); return alert((await r.json()).error || 'failed'); }
+  const r = await labelsByTape(body || { page: pageId, keys }); if (!r) return;
   const bins = (r.headers.get('X-Bins') || '').split(',').filter(Boolean);
-  if (r.status !== 204) await deliver(r);
-  if (bins.length) {
-    const rb = await fetch('/api/labels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bins, only: keys === 'new' ? 'new' : undefined }) });
-    if (!rb.ok) { status(''); return alert((await rb.json()).error || 'failed'); }
-    await deliver(rb);
-  }
+  if (bins.length) await labelsByTape({ bins, only: keys === 'new' ? 'new' : undefined });
 }
 // delivers one PDF: to the helper's printer queue for that tape, or as a download. The tape in the printer cannot be
 // queried, so a direct print first asks for that tape to be loaded; Cancel skips the labels of that size.
 async function deliver(r) {
   const n = r.headers.get('X-Label-Count'), tape = r.headers.get('X-Tape') || '9'; const blob = await r.blob();
   if (HS.get().direct) {
-    if (!confirm(`${n} ${tape === '18' ? 'bin' : 'drawer'} label${n == 1 ? '' : 's'} on ${tape} mm tape. Load the ${tape} mm tape, then OK — or Cancel to skip these.`)) { status(`${tape} mm labels skipped`); return true; }
+    if (!confirm(`${n} label${n == 1 ? '' : 's'} on ${tape} mm tape. Load the ${tape} mm tape, then OK — or Cancel to skip these.`)) { status(`${tape} mm labels skipped`); return true; }
     if (await sendToPrinter(blob, n, tape)) return true;
   }
   // download rather than open: a pop-up would be blocked, and the file is what gets printed anyway
@@ -684,20 +693,16 @@ function renderTypes() {
 }
 $('#typesBtn').onclick = () => { const t = $('#types'); if (t.style.display === 'block') t.style.display = 'none'; else { renderTypes(); t.style.display = 'block'; } };
 function renderHelper() {
-  const h = HS.get();
-  $('#helper').innerHTML = `<b>Label printer</b>
-    <label>Printer queue for 9 mm drawer labels</label><select id="hPrn"></select>
-    <label>Printer queue for 18 mm bin labels</label><select id="hPrnB"></select>
-    <div class="row"><button id="hTest" type="button">Refresh</button><label style="margin:0"><input type="checkbox" id="hDirect" style="width:auto" ${h.direct ? 'checked' : ''}> print directly instead of downloading</label></div>
+  const h = HS.get(), q = queues(), tapes = Object.keys(M.TAPES);
+  $('#helper').innerHTML = `<b>Label printer</b><div class="note">One printer queue per tape width, each with that width saved in its printing preferences.</div>` +
+    tapes.map(t => `<label>Printer queue for ${t} mm tape</label><select class="hQ" data-tape="${t}"></select>`).join('') +
+    `<div class="row"><button id="hTest" type="button">Refresh</button><label style="margin:0"><input type="checkbox" id="hDirect" style="width:auto" ${h.direct ? 'checked' : ''}> print directly instead of downloading</label></div>
     <div class="msg" id="hMsg"></div>
     <div class="row"><button id="hSave" type="button">Save</button><button id="hClose" type="button">Close</button></div>`;
-  const sel = $('#hPrn'), selB = $('#hPrnB');
+  const sels = [...$('#helper').querySelectorAll('.hQ')];
   // the saved queues stay selectable while the helper is offline
-  const fill = names => {
-    const opt = (pn, cur) => `<option ${pn === cur ? 'selected' : ''}>${pn}</option>`;
-    sel.innerHTML = [...new Set([h.printer, ...names].filter(Boolean))].map(pn => opt(pn, h.printer)).join('') || '<option value="">(no printers known yet)</option>';
-    selB.innerHTML = '<option value="">(none)</option>' + [...new Set([h.printerBin, ...names].filter(Boolean))].map(pn => opt(pn, h.printerBin)).join('');
-  };
+  const fill = names => sels.forEach(sel => { const cur = sel.value || q[sel.dataset.tape] || '';
+    sel.innerHTML = '<option value="">(none)</option>' + [...new Set([cur, ...names].filter(Boolean))].map(pn => `<option ${pn === cur ? 'selected' : ''}>${pn}</option>`).join(''); });
   const refresh = async () => {
     $('#hMsg').textContent = 'asking the server…';
     try { const j = await (await fetch('/api/print/status')).json(); fill(j.printers || []);
@@ -707,14 +712,14 @@ function renderHelper() {
   };
   fill([]); refresh();
   $('#hTest').onclick = refresh;
-  $('#hSave').onclick = () => { HS.set({ printer: sel.value, printerBin: selB.value, direct: $('#hDirect').checked }); $('#hMsg').textContent = 'saved'; };
+  $('#hSave').onclick = () => { HS.set({ queues: Object.fromEntries(sels.map(sel => [sel.dataset.tape, sel.value])), direct: $('#hDirect').checked }); $('#hMsg').textContent = 'saved'; };
   $('#hClose').onclick = () => { $('#helper').style.display = 'none'; };
 }
 $('#helperBtn').onclick = () => { const t = $('#helper'); if (t.style.display === 'block') t.style.display = 'none'; else { renderHelper(); t.style.display = 'block'; } };
 $('#cabinetBtn').onclick = () => window.open(`cabinet.html?page=${encodeURIComponent(pageId)}`, '_blank');
 $('#printAll').onclick = () => printKeys('all');
 $('#printDrawers').onclick = () => { const v = prompt(`Drawers to print: a list or ranges, R/F for one half of a divided drawer; bare numbers are the ${cabHint()}. e.g. 12-16, 20, 30R, M3-5`); if (v) printKeys(null, { drawers: v, page: pageId }); };
-$('#printBins').onclick = () => { const v = prompt('Bins to print (18 mm labels): a list or ranges, or "all". e.g. B1, B3-5, A2-4'); if (v) printKeys(null, { bins: v.trim().toLowerCase() === 'all' ? 'all' : v }); };
+$('#printBins').onclick = () => { const v = prompt('Bins to print: a list or ranges, or "all". e.g. B1, B3-5, A2-4'); if (v) printKeys(null, { bins: v.trim().toLowerCase() === 'all' ? 'all' : v }); };
 $('#printNew').onclick = () => printKeys('new');
 $('#markPrinted').onclick = async () => {
   if (!confirm('Record every populated cell on this page as printed with its current text?')) return;
@@ -725,7 +730,7 @@ $('#markPrinted').onclick = async () => {
 function showPreview(key) {
   const slots = cellSlots(key).sort((a, b) => (a.slot.startsWith('D:') ? 0 : a.slot ? 1 : 2) - (b.slot.startsWith('D:') ? 0 : b.slot ? 1 : 2));
   const pv = $('#preview'); pv.innerHTML = '';
-  for (const s of slots) { const img = document.createElement('img'); img.alt = s.label; img.src = `/api/preview.png?page=${encodeURIComponent(pageId)}&key=${encodeURIComponent(key)}&slot=${encodeURIComponent(s.slot)}&t=${Date.now()}`; pv.appendChild(img); }
+  for (const s of slots) { const img = document.createElement('img'); img.alt = s.label; img.onload = () => { img.style.width = `${Math.round(img.naturalWidth * 430 / 3543)}px`; }; img.src = `/api/preview.png?page=${encodeURIComponent(pageId)}&key=${encodeURIComponent(key)}&slot=${encodeURIComponent(s.slot)}&t=${Date.now()}`; pv.appendChild(img); }
   pv.style.display = 'block';
 }
 function hidePreview() { $('#preview').style.display = 'none'; }

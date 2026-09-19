@@ -79,7 +79,10 @@ print one label each. Locations, bins, the cabinet map and PDF: drawers… work 
 - ⎙ on a cell prints that cell's label; on a row header, every label in the row. **PDF: all** prints the page,
   **PDF: unprinted** only labels that changed since the last **Mark all printed**, **PDF: drawers…** takes a list or ranges
   (`12-16, 20, 30R`) across every page, **PDF: bins…** a list of bins (`B1, B3-5` or `all`).
-- Drawer labels are 50 × 9 mm; bin labels 50 × 18 mm, so they come as a separate PDF (and go to a separate printer queue).
+- Drawer labels are 50 × 9 mm and bin labels 50 × 18 mm unless the cabinet says otherwise: the drawer map's **Setup** gives each
+  cabinet, each box of bins and the loose bins a tape width (9, 12 or 18 mm) and a label length. The layouts scale with the
+  tape, and the big line shrinks to fit a short label. Each tape width comes as its own PDF and goes to its own printer queue
+  (**Printer…** has one per width). Changing a size makes those labels count as unprinted.
   A print that touches both delivers the drawer labels first, then the bin labels. A bin label lists everything in the
   bin from every page: one size big with its lengths under it, or one line per size.
 - A label for part of a cell says what sets that part apart: the drive or material (`pan SS`, `Phillips zinc`) and

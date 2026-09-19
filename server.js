@@ -15,7 +15,8 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'static')));
 app.use('/helper', express.static(path.join(__dirname, 'helper'), { index: false }));   // the Windows print helper, downloadable from the page's host
 app.get('/model.js', (req, res) => res.sendFile(path.join(__dirname, 'model.js')));   // the page uses the same location logic as the server
-const load = () => JSON.parse(fs.readFileSync(DATA, 'utf8'));
+let NOW = null;   // the model as last read: the label builders look up each location's label size in it
+const load = () => NOW = JSON.parse(fs.readFileSync(DATA, 'utf8'));
 const loadPrinted = () => fs.existsSync(PRINTED) ? JSON.parse(fs.readFileSync(PRINTED, 'utf8')) : {};
 app.get('/api/data', (req, res) => res.json(load()));
 // Saves carry the revision they were loaded from; a stale copy (another tab, or a model edit made here) is refused with the
@@ -86,7 +87,12 @@ function groupQual(group) {
 // the text of one location's label: { pn, value, qual, types, sig }
 // cells that share a location print as ONE label: "#10 Washer" (washers + lock washers), "#4-40 Nut" (nuts + lock nuts),
 // or for screws the size in the big slot and the lengths on the detail line; the icons are the union of the cells'
+// a label of a non-default size says so in its signature, so changing a cabinet's label size makes its labels unprinted
 function groupText(group) {
+  const t = groupText0(group), c = group[0], def = M.LABEL_DEFAULT[c.kind === 'bin' ? 'bin' : 'drawer'], z = M.labelSpec(NOW, c);
+  return z.tape === def.tape && z.len === def.len ? t : { ...t, sig: `${t.sig}|${z.tape}x${z.len}` };
+}
+function groupText0(group) {
   const types = [...new Set(group.flatMap(pt => pt.types || []))];
   const qual = groupQual(group);
   if (group.length === 1) { const pt = group[0], pn = M.cellText(pt.page, pt.key), value = M.isList(pt.page) ? (M.listItem(pt.page, pt.key)?.detail || '') : ''; return { pn, value, qual, types, sig: `${pn}|${value}|${qual}|${types.join(',')}` }; }
@@ -124,41 +130,60 @@ function wrap2(text, fs) {
   }
   return best ? [best.a, best.b] : [text];
 }
+// the style of a label at a location: the drawer (one line) or bin (stacked) layout, scaled to the printable height of the
+// tape set for that cabinet, at the length set for it. f = the scale; text never goes under 1.9 mm, the smallest size in use
+function styleAt(c) {
+  const kind = c.kind === 'bin' ? 'bin' : 'drawer', B = L.STYLE[kind], z = M.labelSpec(NOW, c), print = M.TAPES[z.tape], f = print / B.print;
+  const S = { ...B, tape: z.tape, print, len: z.len };
+  if (f !== 1) for (const k of ['pn', 'spec', 'pnX', 'pad', 'glyphH']) S[k] = +(B[k] * f).toFixed(2);
+  if (f !== 1 && kind === 'bin') S.detX = S.pnX;
+  S.pn = Math.max(S.pn, 1.9); S.spec = Math.max(S.spec, 1.9);
+  return { S, f, kind, style: f === 1 && z.len === B.len ? null : S };
+}
+// on a label of a custom size the big line shrinks until it fits beside what must share the strip with it (reserve, mm);
+// labels of the default size are left exactly as they have always printed
+function fitPn(S, text, reserve) {
+  const room = S.len - S.pad - S.pnX - reserve;
+  while (S.pn > 1.9 && L.textWidth(text, S.pn) > room) S.pn = +(S.pn - 0.1).toFixed(2);
+}
+const sized = (v, f) => Math.max(1.9, +(v * f).toFixed(2));
 function drawerLabel(group) {
-  const S = L.STYLE.drawer, t = groupText(group);
+  const { S, f, style } = styleAt(group[0]), t = groupText(group);
   const base = [t.value, t.qual].filter(Boolean);
-  const detX = S.pnX + L.textWidth(t.pn, S.pn) + 2.5;
+  if (style) fitPn(S, t.pn, (t.types.length ? 3.0 * f + 1.5 : 0) + (base.length ? 2.5 * f + Math.max(...base.map(l => L.textWidth(l, sized(2.0, f)))) : 0));
+  const detX = S.pnX + L.textWidth(t.pn, S.pn) + 2.5 * f;
   const freeFor = (lines, sp) => S.len - S.pad - 1.5 - Math.max(S.pnX + L.textWidth(t.pn, S.pn), ...lines.map(l => detX + L.textWidth(l, sp)));
   // candidates in order of preference: one line large, then two lines / smaller text; the first that keeps the icons ≥ ~3 mm wins
   const cands = [];
-  if (base.length === 1) for (const sp of [3.0, 2.6, 2.3, 2.0]) { cands.push({ lines: base, sp }); if (sp < 3.0 && base[0].length > 6) cands.push({ lines: wrap2(base[0], sp), sp }); }
-  else if (base.length === 2) for (const sp of [2.6, 2.3, 2.0, 1.9]) cands.push({ lines: base, sp });
+  if (base.length === 1) for (const sp of [3.0, 2.6, 2.3, 2.0].map(v => sized(v, f))) { cands.push({ lines: base, sp }); if (sp < sized(3.0, f) && base[0].length > 6) cands.push({ lines: wrap2(base[0], sp), sp }); }
+  else if (base.length === 2) for (const sp of [2.6, 2.3, 2.0, 1.9].map(v => sized(v, f))) cands.push({ lines: base, sp });
   else cands.push({ lines: [], sp: null });
   let pick = null;
-  for (const c of cands) { c.lay = I.layout(t.types, freeFor(c.lines, c.sp ?? S.spec), S.glyphH); if (!pick || c.lay.size > pick.lay.size + 1e-6) pick = c; if (c.lay.size >= Math.min(3.0, S.glyphH / 2)) { pick = c; break; } }
+  for (const c of cands) { c.lay = I.layout(t.types, freeFor(c.lines, c.sp ?? S.spec), S.glyphH); if (!pick || c.lay.size > pick.lay.size + 1e-6) pick = c; if (c.lay.size >= Math.min(3.0 * f, S.glyphH / 2)) { pick = c; break; } }
   const extra = pick.lines.length ? { spec: pick.sp, detX, detCenter: pick.lines.length === 1 } : {};
   const isList = group.length === 1 && M.isList(group[0].page);
   return { kind: 'drawer', pn: t.pn, value: pick.lines[0] || '', specs: pick.lines[1] || '', pinout: null, glyphSvg: t.types.length ? I.icons(t.types, pick.lay.rows) : null, glyphMaxW: pick.lay.maxW, ...extra,
-           generic: true, _n: t.types.length || (isList ? 1 : 0), _sig: t.sig, _slot: groupSlot(group) };
+           generic: true, style, _tape: S.tape, _n: t.types.length || (isList ? 1 : 0), _sig: t.sig, _slot: groupSlot(group) };
 }
 // an 18 mm bin label: everything in the bin, from every page. One entry: the size big with its details under it; several:
 // one line per entry at a size that fits (up to six lines)
 function binEntries(groups, bin) { return groups.filter(g => groupSlot(g) === `B:${bin}`).map(g => ({ group: g, ...groupText(g) })); }
 function binLabel(groups, bin) {
-  const S = L.STYLE.bin, entries = binEntries(groups, bin);
+  const { S, f, style } = styleAt({ kind: 'bin', bin }), entries = binEntries(groups, bin);
   const types = [...new Set(entries.flatMap(e => e.types))];
   let lab;
+  if (style && entries.length === 1) fitPn(S, entries[0].pn, types.length ? 3.0 * f + 2.5 : 1.0);
   if (entries.length === 1) lab = { pn: entries[0].pn, value: entries[0].value, specs: entries[0].qual, lines: [] };
   else {
     let lines = entries.map(e => [e.pn, e.value, e.qual].filter(Boolean).join('  '));
     if (lines.length > 6) { L.warnings.push(`bin ${bin}: ${lines.length} entries, only 6 fit`); lines = [...lines.slice(0, 5), `+${lines.length - 5} more`]; }
-    lab = { pn: '', value: '', specs: '', lines, spec: [4.0, 4.0, 3.4, 2.8, 2.4, 2.0][lines.length - 1] || 2.0 };
+    lab = { pn: '', value: '', specs: '', lines, spec: sized([4.0, 4.0, 3.4, 2.8, 2.4, 2.0][lines.length - 1] || 2.0, f) };
   }
   const all = () => [lab.value, lab.specs, ...lab.lines].filter(Boolean);
   const freeFor = () => S.len - S.pad - 1.5 - Math.max(lab.pn ? S.pnX + L.textWidth(lab.pn, S.pn) : 0, ...all().map(l => S.detX + L.textWidth(l, lab.spec ?? S.spec)));
   let lay = I.layout(types, freeFor(), S.glyphH);
-  while (lay.size < 3.0 && (lab.spec ?? S.spec) > 2.0) { lab.spec = +(((lab.spec ?? S.spec) - 0.3).toFixed(1)); lay = I.layout(types, freeFor(), S.glyphH); }
-  return { kind: 'bin', ...lab, pinout: null, glyphSvg: types.length ? I.icons(types, lay.rows) : null, glyphMaxW: lay.maxW, generic: true, _n: types.length || entries.length,
+  while (lay.size < 3.0 * f && (lab.spec ?? S.spec) > sized(2.0, f)) { lab.spec = Math.max(sized(2.0, f), +(((lab.spec ?? S.spec) - 0.3 * f).toFixed(2))); lay = I.layout(types, freeFor(), S.glyphH); }
+  return { kind: 'bin', ...lab, pinout: null, glyphSvg: types.length ? I.icons(types, lay.rows) : null, glyphMaxW: lay.maxW, generic: true, style, _tape: S.tape, _n: types.length || entries.length,
            _sig: entries.map(e => e.sig).join(';'), _slot: `B:${bin}`, _bin: bin, _entries: entries };
 }
 const allBins = d => [...new Set(d.pages.flatMap(p => M.bins(p)))].sort(M.binOrder);
@@ -186,15 +211,19 @@ function binList(d, spec) {
   }
   return have.filter(b => want.has(b));
 }
-async function sendPdf(res, labels, name, bins) {
+// one PDF holds the labels of one tape width: the one asked for (tape), else the narrowest; X-Tapes lists every width the
+// request has labels for, so the caller can come back for the others
+async function sendPdf(res, labels, name, bins, tape) {
   if (!labels.length) return res.status(400).json({ error: 'nothing to print' });
+  const tapes = [...new Set(labels.map(l => l._tape))].sort((a, b) => a - b), pick = tapes.includes(+tape) ? +tape : tapes[0];
+  labels = labels.filter(l => l._tape === pick); if (tapes.length > 1) name += `-${pick}mm`;
   L.warnings.length = 0;
   const pdf = await L.pdf(labels);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="labels-${name.replace(/[^\w.-]+/g, '_')}.pdf"`);
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Label-Count, X-Tape, X-Bins');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Label-Count, X-Tape, X-Tapes, X-Bins');
   res.setHeader('X-Label-Count', String(labels.length));
-  res.setHeader('X-Tape', labels[0].kind === 'bin' ? '18' : '9');
+  res.setHeader('X-Tape', String(pick)); res.setHeader('X-Tapes', tapes.join(','));
   if (bins?.length) res.setHeader('X-Bins', bins.join(','));   // bin labels the caller should fetch separately (18 mm tape)
   if (L.warnings.length) console.warn(L.warnings.join('\n'));
   res.send(Buffer.from(pdf));
@@ -202,7 +231,7 @@ async function sendPdf(res, labels, name, bins) {
 // the printed record key of a portion, and whether a group is already printed as it stands
 const printedKey = pt => `${pt.page.id}|${pt.key}`;
 // POST /api/labels -> PDF of 9 mm drawer labels: { page, keys: [...] | "all" | "new" [, slots: [...]] } or { drawers: "12-16, 20, 30R" }
-// (every page). Bin labels are 18 mm and come from a separate call: { bins: "all" | "B1, B3-5" | ["B1", ...] [, only: "new"] }.
+// (every page). Either may add tape: N for the labels of that width (see sendPdf). Bin labels come from a separate call: { bins: "all" | "B1, B3-5" | ["B1", ...] [, only: "new"] }.
 // A page request whose cells also live in bins answers with X-Bins: the bins to fetch next (204 when there are only bins).
 app.post('/api/labels', async (req, res) => {
   const d = load(), all = allGroups(d);
@@ -210,7 +239,7 @@ app.post('/api/labels', async (req, res) => {
     const bins = binList(d, req.body.bins); if (!bins) return res.status(400).json({ error: 'bad bin list; use e.g. B1, B3-5, A2' });
     let labels = bins.map(b => binLabel(all, b)).filter(l => l._n > 0);
     if (req.body.only === 'new') { const pr = loadPrinted(); labels = labels.filter(l => pr[`bin|${l._bin}`] !== l._sig); }
-    return sendPdf(res, labels, 'bins-' + (req.body.bins === 'all' ? 'all' : labels.map(l => l._bin).join('_')));
+    return sendPdf(res, labels, 'bins-' + (req.body.bins === 'all' ? 'all' : labels.map(l => l._bin).join('_')), null, req.body.tape);
   }
   let groups = [], name = 'all', bins = [];
   if (req.body.drawers) {
@@ -242,7 +271,7 @@ app.post('/api/labels', async (req, res) => {
   }
   const labels = groups.map(drawerLabel).filter(l => l._n > 0);
   if (!labels.length && bins.length) { res.setHeader('Access-Control-Expose-Headers', 'X-Bins'); res.setHeader('X-Bins', bins.join(',')); return res.status(204).end(); }
-  return sendPdf(res, labels, name, bins);
+  return sendPdf(res, labels, name, bins, req.body.tape);
 });
 // POST /api/printed { page, keys: [...] | "all" } marks the labels those cells are on (every cell on them, from any page) and the
 // bins they touch as printed with their current text; { bins: [...] | "all" } marks bins

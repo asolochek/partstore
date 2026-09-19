@@ -88,6 +88,21 @@ function positions(d) {
 }
 const positionOf = (d, id, n) => { const r = positions(d).ranges.find(r => r.id === id); return r ? r.start + (+n) - 1 : NaN; };
 const atPosition = (d, pos) => { const r = positions(d).ranges.find(r => pos >= r.start && pos < r.start + r.count); return r ? { cabinet: r.id, drawer: pos - r.start + 1 } : null; };
+// ---- label sizes ----
+// A physical cabinet or box may set the size of its labels: layout.cabinets[i].label = { tape, len } (mm); the loose (B) bins
+// share layout.loose.label. Unset, drawers take 9 mm × 50 mm and bins 18 mm × 50 mm. TAPES: tape width -> printable height
+// (mm), the strip the printer driver centres on the tape; only widths whose printable height has been measured are offered.
+const TAPES = { 9: 7.0, 12: 9.5, 18: 15.5 };
+const LABEL_DEFAULT = { drawer: { tape: 9, len: 50 }, bin: { tape: 18, len: 50 } };
+const LABEL_LEN = { min: 20, max: 200 };
+const cleanLabel = (l, kind) => { const def = LABEL_DEFAULT[kind], tape = TAPES[+l?.tape] ? +l.tape : def.tape, len = Math.min(LABEL_LEN.max, Math.max(LABEL_LEN.min, +l?.len || def.len)); return { tape, len }; };
+// the label size at a location ({ kind:'drawer', cabinet, drawer } | { kind:'bin', bin } | nothing: stock without a place prints as a default drawer label)
+function labelSpec(d, loc) {
+  const P = positions(d);
+  if (loc?.kind === 'bin') { const b = P.bins.find(x => x.bin === loc.bin); return cleanLabel(b ? P.layout.cabinets[b.cabIx].label : P.layout.loose?.label, 'bin'); }
+  if (loc?.kind === 'drawer') { const pos = positionOf(d, loc.cabinet || CABINETS[0].id, loc.drawer), dr = P.drawers[pos - 1]; return cleanLabel(dr ? P.layout.cabinets[dr.cabIx].label : null, 'drawer'); }
+  return cleanLabel(null, 'drawer');
+}
 const cabinetById = id => CABINETS.find(c => c.id === id);
 const cabinetByPrefix = ch => CABINETS.find(c => c.prefix === String(ch || '').toUpperCase());
 // ---- locations ----
@@ -180,6 +195,6 @@ function drawerOrder(page, groups) {
   const key = g => { const c = g[0]; return c.kind === 'drawer' ? [0, cabIx(c.cabinet), +c.drawer, c.half === 'front' ? 1 : 0] : c.kind === 'bin' ? [1, 0, 0, 0] : [2, 0, 0, 0]; };
   return groups.map((g, i) => [g, key(g), i]).sort((a, b) => (a[1][0] - b[1][0]) || (a[1][1] - b[1][1]) || (a[1][2] - b[1][2]) || (a[1][3] - b[1][3]) || (a[2] - b[2])).map(x => x[0]);
 }
-const api = { CABINETS, KINDS, DEFAULT_LAYOUT, BIN_LETTERS, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
+const api = { TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, CABINETS, KINDS, DEFAULT_LAYOUT, BIN_LETTERS, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
 if (typeof module !== 'undefined') module.exports = api; else window.M = api;   // the same file is served to the browser
 })();
