@@ -157,13 +157,19 @@ function objectAt(pageId, part, level) {
 }
 // move a card: every part gets `loc` written at the finer of its own level and the card's grain (null loc = unassign)
 function setCardLoc(card, loc) {
+  // several parts of a card (head types, drive + material) can take their location from the same object (their cell, say):
+  // that object is moved once, or its overflow list would gain the new location once per part
+  const moved = { true: new Set(), false: new Set() };
   for (const part of card.parts) {
     const level = RANK[part.level] > RANK[card.grain] ? part.level : card.grain;
-    const o = objectAt(part.pageId || card.pageId, part, level || 'cell'); if (!o) continue;
+    const o = objectAt(part.pageId || card.pageId, part, level || 'cell'); if (!o || moved[!!part.overflow].has(o)) continue;
+    moved[!!part.overflow].add(o);
     if (part.overflow) {
       const old = card.from ? slotKey(card.undivided ? { ...card.from, half: '' } : card.from) : null;
-      o.overflow = (o.overflow || []).filter(l => !old || slotKey(M.locOf({ loc: l }) || {}) !== old);
-      if (loc) { const l = { ...loc }; if (l.cabinet === (pageOf(part.pageId || card.pageId).cabinet || '')) delete l.cabinet; o.overflow.push(l); } if (!o.overflow.length) delete o.overflow;
+      // a stored drawer location leaves out the page's own cabinet; card.from and loc always name theirs
+      const home = pageOf(part.pageId || card.pageId).cabinet || '', slotIn = l => { const x = M.locOf({ loc: l }) || {}; return slotKey(x.kind === 'drawer' ? { ...x, cabinet: x.cabinet || home } : x); };
+      o.overflow = (o.overflow || []).filter(l => !old || slotIn(l) !== old);
+      if (loc) { const l = { ...loc }; if (l.cabinet === (pageOf(part.pageId || card.pageId).cabinet || '')) delete l.cabinet; if (!o.overflow.some(x => slotIn(x) === slotIn(loc))) o.overflow.push(l); } if (!o.overflow.length) delete o.overflow;
     } else {
       delete o.drawer; delete o.half;
       if (loc) { o.loc = { ...loc }; if (o.loc.cabinet === (pageOf(part.pageId || card.pageId).cabinet || '')) delete o.loc.cabinet; } else delete o.loc;
