@@ -81,7 +81,8 @@ print one label each. Locations, bins, the cabinet map and PDF: drawers… work 
   (`12-16, 20, 30R`) across every page, **PDF: bins…** a list of bins (`B1, B3-5` or `all`).
 - Drawer labels are 50 × 9 mm and bin labels 50 × 18 mm unless the cabinet says otherwise: the drawer map's **Setup** gives each
   cabinet, each box of bins and the loose bins a tape width (9, 12 or 18 mm) and a label length. The layouts scale with the
-  tape, and the big line shrinks to fit a short label. Each label size comes as its own PDF and goes to its own printer queue
+  tape, and the big line shrinks to fit a short label. On 18 mm tape a bin label uses the height: the size as large as fits,
+  with the icons and details in a band under it, or the icons beside it when that lets the text be larger. Each label size comes as its own PDF and goes to its own printer queue
   (**Printer…** has one per size in use). Changing a size makes those labels count as unprinted.
   A print that touches both delivers the drawer labels first, then the bin labels. A bin label lists everything in the
   bin from every page: one size big with its lengths under it, or one line per size.

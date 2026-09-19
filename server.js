@@ -168,23 +168,77 @@ function drawerLabel(group) {
 // an 18 mm bin label: everything in the bin, from every page. One entry: the size big with its details under it; several:
 // one line per entry at a size that fits (up to six lines)
 function binEntries(groups, bin) { return groups.filter(g => groupSlot(g) === `B:${bin}`).map(g => ({ group: g, ...groupText(g) })); }
+// Icons are drawn in a 100-unit box that most of them do not fill (a screw's ink spans about 70 % of it), so a glyph slot sized
+// by the box leaves the icons small. inkExt(names) = the share of the box height the ink of these icons needs, measured about the
+// box's centre (the renderer centres the box): the slot may be that much taller than the room. Measured once per icon by
+// rendering it; an icon not measured yet counts as filling its box, and is measured for the next label
+const INK = new Map(), sharp = require('sharp');
+async function measureInk(name) {
+  if (INK.has(name)) return; INK.set(name, 1);
+  try {
+    const { data, info } = await sharp(Buffer.from(I.icons([name]).replace('<svg ', '<svg width="200" height="200" '))).flatten({ background: '#fff' }).greyscale().raw().toBuffer({ resolveWithObject: true });
+    let top = info.height, bot = -1;
+    for (let y = 0; y < info.height; y++) for (let x = 0; x < info.width; x++) if (data[y * info.width + x] < 128) { top = Math.min(top, y); bot = Math.max(bot, y); break; }
+    if (bot >= 0) INK.set(name, Math.min(1, Math.max(0.3, 2 * Math.max(info.height / 2 - top, bot + 1 - info.height / 2) / info.height + 0.02)));
+  } catch (e) { console.warn(`icon ${name}: not measured (${e.message})`); }
+}
+const inkExt = names => Math.max(0.3, ...names.map(n => { if (!INK.has(n)) measureInk(n); return INK.get(n) ?? 1; }));
 function binLabel(groups, bin) {
   const { S, f, style } = styleAt({ kind: 'bin', bin }), entries = binEntries(groups, bin);
   const types = [...new Set(entries.flatMap(e => e.types))];
+  const avail = S.print - 2 * S.pad, CAP = L.CAP;
+  const done = (lab, lay, st) => ({ kind: 'bin', ...lab, pinout: null, glyphSvg: types.length ? I.icons(types, lay.rows) : null, glyphMaxW: lay.maxW, generic: true, style: st, _tape: S.tape, _size: `${S.tape}x${S.len}`,
+    _n: types.length || entries.length, _sig: entries.map(e => e.sig).join(';'), _slot: `B:${bin}`, _bin: bin, _entries: entries });
+  // the largest text size (mm, in 0.1 steps between lo and hi) at which ok(size) holds
+  const largest = (lo, hi, ok) => { let v = hi; while (v > lo && !ok(v)) v = +(v - 0.1).toFixed(2); return v; };
+  if (entries.length === 1 && S.print >= 12) {
+    // a tall tape, one entry: two rows, so the height is used. The size goes across the full width on top, as large as the width
+    // allows while leaving the band under it at least 5 mm; the band holds the detail lines (left) and the icons (right)
+    // (heights are budgeted with 0.8 em for the big line: Futura's figures and pointed capitals stand taller than its cap height)
+    const e = entries[0], lines = [e.value, e.qual].filter(Boolean), n = lines.length, TALL = 0.8, vpad = 1.5 * f, high = S.print - 2 * vpad;
+    const minBand = Math.max(types.length ? 5.0 * f : 0, n ? (CAP + (n - 1) * S.pitch) * 3.0 * f : 0);
+    // a fraction's slash reaches under the baseline, so such a line keeps a little more distance from the band
+    const under = /\//.test(e.pn) ? 0.15 : 0, gap0 = minBand ? 1.2 * f : 0, Z = { ...S, vpad };
+    const setPn = v => { Z.pn = v; Z.bandGap = gap0 + (minBand ? under * v : 0); Z.band = minBand ? high - Z.bandGap - v * TALL : 0.01; };
+    // the width estimate runs a few percent short on long lines, hence the 1.05
+    setPn(largest(1.9, (high - minBand - gap0) / (TALL + under), v => L.textWidth(e.pn, v) * 1.05 <= S.len - S.pad - S.pnX - 1.0));
+    // detail text: as large as the band's height allows (up to 4 mm), then smaller until the icons beside it reach 3.5 mm
+    const room = sp => S.len - 2 * S.pad - (n ? Math.max(...lines.map(l => L.textWidth(l, sp))) + 2.0 : 0);
+    const ext = types.length ? inkExt(types) : 1, slot = () => Z.band / ext;   // the icon boxes may be taller than the band: their ink still fits it
+    const icons = sp => I.layout(types, room(sp), slot()).size;
+    const pickSpec = () => { Z.spec = n ? largest(1.9, 4.0 * f, sp => sp * CAP + (n - 1) * sp * S.pitch <= Z.band && (!types.length || icons(sp) >= Math.min(3.5 * f, Z.band))) : S.spec; };
+    pickSpec();
+    // long details can leave the icons small even at the smallest text: then the big line gives up height to the band (down to 5 mm)
+    while (types.length && icons(Z.spec) < 3.5 * f && Z.pn > 5.0 * f) { setPn(+(Z.pn - 0.2).toFixed(2)); pickSpec(); }
+    // the other arrangement: icons beside the size in the top row, the band (if any) left to the details across the full width.
+    // Taken when it gives larger detail text, or with no details when the size comes out at least as large (short sizes, long labels)
+    if (types.length) {
+      const wide = sp => Math.max(...lines.map(l => L.textWidth(l, sp))) * 1.05, Y = { ...S, vpad, glyphTop: true, bandGap: n ? gap0 : 0 }, minIcon = (n ? 3.5 : 6.5) * f;   // (box sizes: a screw's ink is about 70 % of its box)
+      Y.spec = n ? largest(1.9, 4.0 * f, sp => wide(sp) <= S.len - S.pad - S.detX - 1.0 && (CAP + (n - 1) * S.pitch + 0.3) * sp <= high - gap0 - 6.5 * f * TALL) : S.spec;   // the top row keeps room for a 6.5 mm size
+      Y.band = n ? (CAP + (n - 1) * S.pitch) * Y.spec + 0.3 * Y.spec : 0.01;   // + the descenders of the last line
+      const topH = high - Y.band - Y.bandGap, iconsAt = v => I.layout(types, S.len - S.pad - 1.5 - S.pnX - L.textWidth(e.pn, v) * 1.05 - 2.0, topH / ext);
+      Y.pn = largest(1.9, topH / (TALL + under), v => iconsAt(v).size >= minIcon); Y.glyphH = topH / ext;
+      if (iconsAt(Y.pn).size >= minIcon && (n ? Y.spec > Z.spec + 0.05 : Y.pn >= Z.pn)) return done({ pn: e.pn, value: e.value, specs: e.qual, lines: [] }, iconsAt(Y.pn), Y);
+    }
+    Z.glyphH = slot();
+    return done({ pn: e.pn, value: e.value, specs: e.qual, lines: [] }, I.layout(types, room(Z.spec), slot()), Z);
+  }
   let lab;
   if (style && entries.length === 1) fitPn(S, entries[0].pn, types.length ? 3.0 * f + 2.5 : 1.0);
   if (entries.length === 1) lab = { pn: entries[0].pn, value: entries[0].value, specs: entries[0].qual, lines: [] };
   else {
     let lines = entries.map(e => [e.pn, e.value, e.qual].filter(Boolean).join('  '));
     if (lines.length > 6) { L.warnings.push(`bin ${bin}: ${lines.length} entries, only 6 fit`); lines = [...lines.slice(0, 5), `+${lines.length - 5} more`]; }
-    lab = { pn: '', value: '', specs: '', lines, spec: sized([4.0, 4.0, 3.4, 2.8, 2.4, 2.0][lines.length - 1] || 2.0, f) };
+    // several entries: one line each, as large as the height allows (up to 6 mm) while the icons beside them keep 3 mm
+    const n = lines.length, wide = sp => Math.max(...lines.map(l => L.textWidth(l, sp)));
+    const spec = largest(sized(2.0, f), 6.0 * f, sp => sp * CAP + (n - 1) * sp * S.pitch <= avail && (!types.length || I.layout(types, S.len - S.pad - 1.5 - S.detX - wide(sp), S.glyphH).size >= 3.0 * f) && S.detX + wide(sp) <= S.len - S.pad);
+    lab = { pn: '', value: '', specs: '', lines, spec };
   }
   const all = () => [lab.value, lab.specs, ...lab.lines].filter(Boolean);
   const freeFor = () => S.len - S.pad - 1.5 - Math.max(lab.pn ? S.pnX + L.textWidth(lab.pn, S.pn) : 0, ...all().map(l => S.detX + L.textWidth(l, lab.spec ?? S.spec)));
   let lay = I.layout(types, freeFor(), S.glyphH);
   while (lay.size < 3.0 * f && (lab.spec ?? S.spec) > sized(2.0, f)) { lab.spec = Math.max(sized(2.0, f), +(((lab.spec ?? S.spec) - 0.3 * f).toFixed(2))); lay = I.layout(types, freeFor(), S.glyphH); }
-  return { kind: 'bin', ...lab, pinout: null, glyphSvg: types.length ? I.icons(types, lay.rows) : null, glyphMaxW: lay.maxW, generic: true, style, _tape: S.tape, _size: `${S.tape}x${S.len}`, _n: types.length || entries.length,
-           _sig: entries.map(e => e.sig).join(';'), _slot: `B:${bin}`, _bin: bin, _entries: entries };
+  return done(lab, lay, style);
 }
 const allBins = d => [...new Set(d.pages.flatMap(p => M.bins(p)))].sort(M.binOrder);
 // drawer spec: "12-16, 20, 30R, M3-5" -> predicate on (cabinet, drawer, half). A bare number matches both halves of a divided
@@ -379,5 +433,7 @@ app.post('/api/print', express.raw({ type: 'application/pdf', limit: '50mb' }), 
   jobs.set(job.id, job);
   if (helper.waiting) { const w = helper.waiting; helper.waiting = null; clearTimeout(w.timer); hand(w.res, job); } else queue.push(job.id);
 });
+// measure the icons in use before the first label is asked for
+{ const d = load(); for (const g of allGroups(d)) for (const pt of g) for (const t of pt.types || []) measureInk(t); }
 const port = +process.env.PORT || 8093;
 app.listen(port, '127.0.0.1', () => console.log(`partstore on http://127.0.0.1:${port}`));
