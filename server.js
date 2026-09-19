@@ -163,7 +163,7 @@ function drawerLabel(group) {
   const extra = pick.lines.length ? { spec: pick.sp, detX, detCenter: pick.lines.length === 1 } : {};
   const isList = group.length === 1 && M.isList(group[0].page);
   return { kind: 'drawer', pn: t.pn, value: pick.lines[0] || '', specs: pick.lines[1] || '', pinout: null, glyphSvg: t.types.length ? I.icons(t.types, pick.lay.rows) : null, glyphMaxW: pick.lay.maxW, ...extra,
-           generic: true, style, _tape: S.tape, _n: t.types.length || (isList ? 1 : 0), _sig: t.sig, _slot: groupSlot(group) };
+           generic: true, style, _tape: S.tape, _size: `${S.tape}x${S.len}`, _n: t.types.length || (isList ? 1 : 0), _sig: t.sig, _slot: groupSlot(group) };
 }
 // an 18 mm bin label: everything in the bin, from every page. One entry: the size big with its details under it; several:
 // one line per entry at a size that fits (up to six lines)
@@ -183,7 +183,7 @@ function binLabel(groups, bin) {
   const freeFor = () => S.len - S.pad - 1.5 - Math.max(lab.pn ? S.pnX + L.textWidth(lab.pn, S.pn) : 0, ...all().map(l => S.detX + L.textWidth(l, lab.spec ?? S.spec)));
   let lay = I.layout(types, freeFor(), S.glyphH);
   while (lay.size < 3.0 * f && (lab.spec ?? S.spec) > sized(2.0, f)) { lab.spec = Math.max(sized(2.0, f), +(((lab.spec ?? S.spec) - 0.3 * f).toFixed(2))); lay = I.layout(types, freeFor(), S.glyphH); }
-  return { kind: 'bin', ...lab, pinout: null, glyphSvg: types.length ? I.icons(types, lay.rows) : null, glyphMaxW: lay.maxW, generic: true, style, _tape: S.tape, _n: types.length || entries.length,
+  return { kind: 'bin', ...lab, pinout: null, glyphSvg: types.length ? I.icons(types, lay.rows) : null, glyphMaxW: lay.maxW, generic: true, style, _tape: S.tape, _size: `${S.tape}x${S.len}`, _n: types.length || entries.length,
            _sig: entries.map(e => e.sig).join(';'), _slot: `B:${bin}`, _bin: bin, _entries: entries };
 }
 const allBins = d => [...new Set(d.pages.flatMap(p => M.bins(p)))].sort(M.binOrder);
@@ -211,19 +211,21 @@ function binList(d, spec) {
   }
   return have.filter(b => want.has(b));
 }
-// one PDF holds the labels of one tape width: the one asked for (tape), else the narrowest; X-Tapes lists every width the
-// request has labels for, so the caller can come back for the others
-async function sendPdf(res, labels, name, bins, tape) {
+// one PDF holds the labels of one size (tape width x length, e.g. "9x50"), since a printer queue is set up for one size: the
+// size asked for, else the first (narrowest tape, then shortest). X-Sizes lists every size the request has labels for, so the
+// caller can come back for the others
+async function sendPdf(res, labels, name, bins, size) {
   if (!labels.length) return res.status(400).json({ error: 'nothing to print' });
-  const tapes = [...new Set(labels.map(l => l._tape))].sort((a, b) => a - b), pick = tapes.includes(+tape) ? +tape : tapes[0];
-  labels = labels.filter(l => l._tape === pick); if (tapes.length > 1) name += `-${pick}mm`;
+  const num = z => z.split('x').map(Number), sizes = [...new Set(labels.map(l => l._size))].sort((a, b) => num(a)[0] - num(b)[0] || num(a)[1] - num(b)[1]);
+  const pick = sizes.includes(size) ? size : sizes[0];
+  labels = labels.filter(l => l._size === pick); if (sizes.length > 1) name += `-${pick}mm`;
   L.warnings.length = 0;
   const pdf = await L.pdf(labels);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="labels-${name.replace(/[^\w.-]+/g, '_')}.pdf"`);
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Label-Count, X-Tape, X-Tapes, X-Bins');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Label-Count, X-Tape, X-Size, X-Sizes, X-Bins');
   res.setHeader('X-Label-Count', String(labels.length));
-  res.setHeader('X-Tape', String(pick)); res.setHeader('X-Tapes', tapes.join(','));
+  res.setHeader('X-Tape', String(labels[0]._tape)); res.setHeader('X-Size', pick); res.setHeader('X-Sizes', sizes.join(','));
   if (bins?.length) res.setHeader('X-Bins', bins.join(','));   // bin labels the caller should fetch separately (18 mm tape)
   if (L.warnings.length) console.warn(L.warnings.join('\n'));
   res.send(Buffer.from(pdf));
@@ -231,7 +233,7 @@ async function sendPdf(res, labels, name, bins, tape) {
 // the printed record key of a portion, and whether a group is already printed as it stands
 const printedKey = pt => `${pt.page.id}|${pt.key}`;
 // POST /api/labels -> PDF of 9 mm drawer labels: { page, keys: [...] | "all" | "new" [, slots: [...]] } or { drawers: "12-16, 20, 30R" }
-// (every page). Either may add tape: N for the labels of that width (see sendPdf). Bin labels come from a separate call: { bins: "all" | "B1, B3-5" | ["B1", ...] [, only: "new"] }.
+// (every page). Either may add size: "9x70" for the labels of that size (see sendPdf). Bin labels come from a separate call: { bins: "all" | "B1, B3-5" | ["B1", ...] [, only: "new"] }.
 // A page request whose cells also live in bins answers with X-Bins: the bins to fetch next (204 when there are only bins).
 app.post('/api/labels', async (req, res) => {
   const d = load(), all = allGroups(d);
@@ -239,7 +241,7 @@ app.post('/api/labels', async (req, res) => {
     const bins = binList(d, req.body.bins); if (!bins) return res.status(400).json({ error: 'bad bin list; use e.g. B1, B3-5, A2' });
     let labels = bins.map(b => binLabel(all, b)).filter(l => l._n > 0);
     if (req.body.only === 'new') { const pr = loadPrinted(); labels = labels.filter(l => pr[`bin|${l._bin}`] !== l._sig); }
-    return sendPdf(res, labels, 'bins-' + (req.body.bins === 'all' ? 'all' : labels.map(l => l._bin).join('_')), null, req.body.tape);
+    return sendPdf(res, labels, 'bins-' + (req.body.bins === 'all' ? 'all' : labels.map(l => l._bin).join('_')), null, req.body.size);
   }
   let groups = [], name = 'all', bins = [];
   if (req.body.drawers) {
@@ -271,7 +273,7 @@ app.post('/api/labels', async (req, res) => {
   }
   const labels = groups.map(drawerLabel).filter(l => l._n > 0);
   if (!labels.length && bins.length) { res.setHeader('Access-Control-Expose-Headers', 'X-Bins'); res.setHeader('X-Bins', bins.join(',')); return res.status(204).end(); }
-  return sendPdf(res, labels, name, bins, req.body.tape);
+  return sendPdf(res, labels, name, bins, req.body.size);
 });
 // POST /api/printed { page, keys: [...] | "all" } marks the labels those cells are on (every cell on them, from any page) and the
 // bins they touch as printed with their current text; { bins: [...] | "all" } marks bins

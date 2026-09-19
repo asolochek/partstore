@@ -103,6 +103,11 @@ function labelSpec(d, loc) {
   if (loc?.kind === 'drawer') { const pos = positionOf(d, loc.cabinet || CABINETS[0].id, loc.drawer), dr = P.drawers[pos - 1]; return cleanLabel(dr ? P.layout.cabinets[dr.cabIx].label : null, 'drawer'); }
   return cleanLabel(null, 'drawer');
 }
+// every label size in use, as "9x50" strings: the two defaults plus whatever the cabinets, boxes and loose bins set
+function labelSizes(d) {
+  const lay = layoutOf(d), out = [LABEL_DEFAULT.drawer, LABEL_DEFAULT.bin, cleanLabel(lay.loose?.label, 'bin'), ...lay.cabinets.map(c => cleanLabel(c.label, (KINDS[c.kind] || {}).bins ? 'bin' : 'drawer'))];
+  return [...new Set(out.map(z => `${z.tape}x${z.len}`))].sort((a, b) => parseInt(a) - parseInt(b) || +a.split('x')[1] - +b.split('x')[1]);
+}
 const cabinetById = id => CABINETS.find(c => c.id === id);
 const cabinetByPrefix = ch => CABINETS.find(c => c.prefix === String(ch || '').toUpperCase());
 // ---- locations ----
@@ -195,6 +200,6 @@ function drawerOrder(page, groups) {
   const key = g => { const c = g[0]; return c.kind === 'drawer' ? [0, cabIx(c.cabinet), +c.drawer, c.half === 'front' ? 1 : 0] : c.kind === 'bin' ? [1, 0, 0, 0] : [2, 0, 0, 0]; };
   return groups.map((g, i) => [g, key(g), i]).sort((a, b) => (a[1][0] - b[1][0]) || (a[1][1] - b[1][1]) || (a[1][2] - b[1][2]) || (a[1][3] - b[1][3]) || (a[2] - b[2])).map(x => x[0]);
 }
-const api = { TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, CABINETS, KINDS, DEFAULT_LAYOUT, BIN_LETTERS, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
+const api = { TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, CABINETS, KINDS, DEFAULT_LAYOUT, BIN_LETTERS, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
 if (typeof module !== 'undefined') module.exports = api; else window.M = api;   // the same file is served to the browser
 })();
