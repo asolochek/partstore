@@ -101,6 +101,7 @@ main { display:flex; gap:16px; padding:0 14px; flex:1; min-height:0; }
 <div id="menu"></div>
 <div id="settings"></div>
 <script src="/model.js"></script>
+<script src="/print.js"></script>
 <script>
 let data, cab, labels = {}, undoStack = [];
 // which physical cabinets are shown: any combination, remembered in this browser (all of them until a toggle is turned off)
@@ -326,6 +327,9 @@ document.addEventListener('pointerdown', e => { if (!$('#menu').contains(e.targe
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
 function cardMenu(card, x, y) {
   const items = [];
+  // the label of the card's location (a split card still prints the whole label: labels go by location); a bin's label follows
+  // through X-Bins. Printer queues and "print directly" are the ones chosen on the grid page
+  items.push([card.from?.kind === 'bin' ? `Print the label of bin ${card.from.bin}` : 'Print label', () => printLabels({ page: card.parts[0].pageId || card.pageId, keys: [card.parts[0].key], slots: [card.from ? slotKey(card.from) : ''] })]);
   if (card.from && !card.grain) {
     const key = slotKey(card.from);
     items.push(['hd', 'Split this label into…']);

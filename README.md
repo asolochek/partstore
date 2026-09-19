@@ -59,7 +59,7 @@ records what has been printed.
   is a card in its drawer half, bin, or the Unassigned column on the right. Drag a card to a half, a bin, "drop here for a
   new bin", or back to Unassigned. Dropping on an occupied half offers **Merge** (both become one label) or **Insert**,
   shifting what is there along by one half: to the next gap, the rest of the row (refused if the row's last half is in
-  use), or everything after. Right-click a card to **split** its label into cards per size, per head type, or per drive +
+  use), or everything after. Right-click a card to **print its label** (with the printer settings of the grid page), to **split** its label into cards per size, per head type, or per drive +
   material (they stay put until dragged, so material A can go to one drawer and material B to another), to flag it as
   **needing a whole drawer** (drawn full height; both halves must be free), or to unassign it. Right-click an empty half to
   insert or delete a space with the same three ranges; a row-scoped delete only pulls back within its row. Shifts show
@@ -98,7 +98,7 @@ print one label each. Locations, bins, the cabinet map and PDF: drawers… work 
 ## Layout of the repo
 
 `server.js` Express app · `model.js` length series, cell keys, label text, locations and portions (also served to the page) · `icons.js` head, nut and
-washer icons · `static/index.html` the grid · `static/cabinet.html` the drawer map · `helper/` the Windows print helper ·
+washer icons · `static/index.html` the grid · `static/cabinet.html` the drawer map · `static/print.js` fetching and printing label PDFs, for both · `helper/` the Windows print helper ·
 `data/` the model.
 
 ## License
