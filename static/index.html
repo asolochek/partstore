@@ -49,7 +49,7 @@ td.washer { background:var(--none); }
 .ic.hasinfo::after { content:''; position:absolute; left:2px; top:2px; width:6px; height:6px; border-radius:3px; background:var(--ink2); }
 .more { width:28px; height:44px; display:flex; align-items:center; justify-content:center; color:var(--ink2); cursor:pointer; border-radius:3px; font-weight:600; }
 .more:hover { background:#fff; color:var(--ink); }
-#pop { position:fixed; background:#fff; border:1px solid var(--line); border-radius:6px; padding:10px 12px; box-shadow:0 6px 24px rgba(0,0,0,.16); display:none; z-index:20; max-height:80vh; overflow:auto; width:300px; font-size:14px; }
+#pop { position:fixed; background:#fff; border:1px solid var(--line); border-radius:6px; padding:10px 12px; box-shadow:0 6px 24px rgba(0,0,0,.16); display:none; z-index:20; max-height:calc(100vh - 20px); box-sizing:border-box; overflow:auto; width:300px; font-size:14px; }   /* scrolls only when it cannot fit the window */
 #pop h3 { margin:0 0 6px; font-size:14px; }
 #pop h4 { margin:8px 0 3px; font-size:12px; color:var(--ink2); text-transform:uppercase; letter-spacing:.04em; }
 #pop label { display:flex; align-items:center; gap:6px; padding:2px 0; cursor:pointer; }
@@ -73,9 +73,9 @@ td.cell:not(.have) .print, .card:not(.have) .print { visibility:hidden; }
 .legend { display:flex; gap:14px; flex-wrap:wrap; padding:8px 14px; font-size:13px; color:var(--ink2); border-bottom:1px solid var(--line); }
 .legend span { display:inline-flex; align-items:center; gap:4px; }
 .legend svg { width:30px; height:30px; }
-#types { position:fixed; top:56px; right:14px; background:#fff; border:1px solid var(--line); border-radius:6px; padding:10px 14px; box-shadow:0 4px 18px rgba(0,0,0,.12); display:none; z-index:5; max-height:80vh; overflow:auto; }
+#types { position:fixed; top:56px; right:14px; background:#fff; border:1px solid var(--line); border-radius:6px; padding:10px 14px; box-shadow:0 4px 18px rgba(0,0,0,.12); display:none; z-index:5; max-height:calc(100vh - 70px); box-sizing:border-box; overflow:auto; }
 #types h3 { margin:6px 0 4px; font-size:13px; color:var(--ink2); }
-#helper { position:fixed; top:56px; right:14px; background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 14px; box-shadow:0 4px 18px rgba(0,0,0,.12); display:none; z-index:5; width:340px; font-size:14px; }
+#helper { position:fixed; top:56px; right:14px; background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 14px; box-shadow:0 4px 18px rgba(0,0,0,.12); display:none; z-index:5; width:340px; font-size:14px; max-height:calc(100vh - 70px); box-sizing:border-box; overflow:auto; }
 #helper label { display:block; margin:6px 0 2px; color:var(--ink2); font-size:12px; }
 #helper input, #helper select { width:100%; box-sizing:border-box; font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:4px; }
 #helper .row { display:flex; gap:8px; margin-top:10px; align-items:center; }
@@ -495,7 +495,7 @@ const HEAD_UNIVERSE = { machine: HEAD_SHAPES,
 const universeOf = p => HEAD_UNIVERSE[p.class] || HEAD_UNIVERSE.machine;
 const iconSvg = t => icons.svg[t] || icons.svg[shapeOf(t)] || '';
 const iconLabel = t => icons.labels[t] || t;
-function placePop(x, y) { const pop = $('#pop'); pop.style.display = 'block'; pop.style.left = Math.min(x, window.innerWidth - 320) + 'px'; pop.style.top = Math.min(y, window.innerHeight - Math.min(pop.offsetHeight, window.innerHeight * .8) - 10) + 'px'; }
+function placePop(x, y) { const pop = $('#pop'); pop.style.display = 'block'; pop.style.left = Math.min(x, window.innerWidth - 320) + 'px'; pop.style.top = Math.max(10, Math.min(y, window.innerHeight - pop.offsetHeight - 10)) + 'px'; }
 function closePop() { $('#pop').style.display = 'none'; $('#pop').classList.remove('wide'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
 // a click anywhere outside the popup closes it (the click still does whatever it landed on)
@@ -645,7 +645,7 @@ function renderTypes() {
 $('#typesBtn').onclick = () => { const t = $('#types'); if (t.style.display === 'block') t.style.display = 'none'; else { renderTypes(); t.style.display = 'block'; } };
 function renderHelper() {
   const h = HS.get(), q = queues(), sizes = M.labelSizes(data);
-  $('#helper').innerHTML = `<b>Label printer</b><div class="note">One printer queue per label size in use (sizes are set per cabinet in the drawer map's Setup).</div>` +
+  $('#helper').innerHTML = `<b>Label printer</b><div class="note">One printer queue per label size in use (sizes are set per cabinet under Cabinets… on the drawer map).</div>` +
     sizes.map(z => `<label>Printer queue for ${z.replace('x', ' × ')} mm labels</label><select class="hQ" data-tape="${z}"></select>`).join('') +
     `<div class="row"><button id="hTest" type="button">Refresh</button><label style="margin:0"><input type="checkbox" id="hDirect" style="width:auto" ${h.direct ? 'checked' : ''}> print directly instead of downloading</label></div>
     <div class="msg" id="hMsg"></div>

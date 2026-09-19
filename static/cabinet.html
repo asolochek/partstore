@@ -33,13 +33,14 @@ main { display:flex; gap:16px; padding:0 14px; flex:1; min-height:0; }
 .tabs { display:flex; gap:6px; flex-wrap:wrap; }
 .tab { padding:5px 10px; border:1px solid var(--line); background:#fff; cursor:pointer; border-radius:4px; font-size:13px; }
 .tab.on { background:var(--ink); color:#fff; border-color:var(--ink); }
-#settings { position:fixed; top:56px; right:14px; background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 14px; box-shadow:0 4px 18px rgba(0,0,0,.12); display:none; z-index:15; width:440px; font-size:13.5px; max-height:85vh; overflow:auto; }
+#settings { position:fixed; top:56px; right:14px; background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 14px; box-shadow:0 4px 18px rgba(0,0,0,.12); display:none; z-index:15; width:max-content; max-width:calc(100vw - 28px); box-sizing:border-box; font-size:13.5px; max-height:calc(100vh - 70px); overflow:auto; }   /* as wide as its rows need; scrolls only when the window is too small for it. Opens under its button (placeSettings) */
 #settings h3 { margin:8px 0 4px; font-size:13px; color:var(--ink2); }
 #settings table { border-collapse:collapse; width:100%; }
-#settings td { padding:3px 4px; }
+#settings td { padding:3px 4px; white-space:nowrap; }
 #settings input, #settings select { font:inherit; padding:3px 5px; border:1px solid var(--line); border-radius:4px; }
 #settings .row { display:flex; gap:8px; margin-top:10px; align-items:center; }
 #settings .note { color:var(--ink2); font-size:12px; }
+#settings div.note { white-space:normal; max-width:560px; }
 .drawer .n { background:var(--cab, var(--ink2)); color:#fff; padding:1px 5px; border-radius:8px; }
 .drawer.none { background:#efeeea; }
 .legend .cab { display:inline-block; width:14px; height:14px; border-radius:7px; vertical-align:-2px; margin-right:4px; }
@@ -393,7 +394,7 @@ function renderSettings() {
     if (z.tape === def.tape && z.len === def.len) delete o.label; else o.label = z; };
   const read = () => { const l = M.layoutOf(data); l.cabinets = [...el.querySelectorAll('.sTitle')].map((t, i) => { const c = { ...l.cabinets[i], title: t.value.trim() || l.cabinets[i].title, kind: el.querySelector(`.sKind[data-i="${i}"]`).value }; delete c.first; const f = el.querySelector(`.sPrefix[data-i="${i}"]`); if (f) { const v = f.value.trim().toUpperCase(); if (M.BIN_LETTERS.includes(v)) c.prefix = v; } if (!!M.KINDS[c.kind]?.bins === !!M.KINDS[l.cabinets[i].kind]?.bins) readLabel(c, i); else delete c.label;   // drawers <-> bins: back to that kind's default size
     return c; }); l.loose = { ...(l.loose || {}) }; readLabel(l.loose, 'loose'); if (!Object.keys(l.loose).length) delete l.loose; el.querySelectorAll('.sCount').forEach(x => l.counts[x.dataset.id] = +x.value || 0); return l; };
-  const restage = l => { data.layout = l; renderSettings(); };
+  const restage = l => { data.layout = l; renderSettings(); placeSettings(); };
   el.querySelectorAll('.sUp').forEach(b => b.onclick = () => { const l = read(), i = +b.dataset.i; if (i > 0) [l.cabinets[i - 1], l.cabinets[i]] = [l.cabinets[i], l.cabinets[i - 1]]; restage(l); });
   el.querySelectorAll('.sDn').forEach(b => b.onclick = () => { const l = read(), i = +b.dataset.i; if (i < l.cabinets.length - 1) [l.cabinets[i + 1], l.cabinets[i]] = [l.cabinets[i], l.cabinets[i + 1]]; restage(l); });
   el.querySelectorAll('.sRm').forEach(b => b.onclick = () => { const l = read(); l.cabinets.splice(+b.dataset.i, 1); restage(l); });
@@ -402,7 +403,10 @@ function renderSettings() {
   $('#sSave').onclick = async () => { data.layout = read(); snapshot(); if (await commit('layout saved')) { $('#settings').style.display = 'none'; } };
   $('#sClose').onclick = () => { $('#settings').style.display = 'none'; load(); };
 }
-$('#setupBtn').onclick = () => { const t = $('#settings'); if (t.style.display === 'block') { t.style.display = 'none'; load(); } else { renderSettings(); t.style.display = 'block'; } };
+// under the Cabinets… button, its left edge on the button's, pulled back in where the window is too narrow for that
+function placeSettings() { const t = $('#settings'), r = $('#setupBtn').getBoundingClientRect(); t.style.right = 'auto'; t.style.top = `${Math.round(r.bottom + 8)}px`; t.style.maxHeight = `calc(100vh - ${Math.round(r.bottom + 8) + 14}px)`; t.style.left = `${Math.max(14, Math.min(r.left, window.innerWidth - t.offsetWidth - 14))}px`; }
+$('#setupBtn').onclick = () => { const t = $('#settings'); if (t.style.display === 'block') { t.style.display = 'none'; load(); } else { renderSettings(); t.style.display = 'block'; placeSettings(); } };
+window.addEventListener('resize', () => { if ($('#settings').style.display === 'block') placeSettings(); });
 function drawerZones(el, c, n, d) {
   // a whole-drawer card fills the drawer; older undivided assignments that share a drawer with half entries show all three zones
   const whole = d && d.whole.length, halvesUsed = d && (d.back.length || d.front.length);
