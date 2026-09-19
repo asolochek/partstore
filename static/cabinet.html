@@ -69,7 +69,8 @@ main { display:flex; gap:16px; padding:0 14px; flex:1; min-height:0; }
 .bins { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:6px; }
 .bin { background:var(--none); border-radius:6px; padding:6px 8px 6px 8px; position:relative; min-height:44px; display:flex; flex-direction:column; gap:3px; }
 .bin.over { background:var(--drop); outline:2px solid #8fcf8f; }
-.bin .n { position:absolute; top:4px; right:7px; font-size:12px; color:var(--bin); font-weight:600; pointer-events:none; }
+.bin .n { position:absolute; top:3px; right:5px; font-size:11px; font-weight:600; font-variant-numeric:tabular-nums; background:var(--bin); color:#fff; padding:1px 5px; border-radius:8px; pointer-events:none; z-index:1; }   /* above the card, like a drawer's number */
+.bin .card { padding-right:36px; }   /* the card's text stops short of the bin number */
 .bin.new { border:1px dashed var(--line); color:var(--ink2); justify-content:center; align-items:center; }
 #menu { position:fixed; background:#fff; border:1px solid var(--line); border-radius:6px; box-shadow:0 6px 24px rgba(0,0,0,.16); display:none; z-index:20; min-width:220px; font-size:13.5px; padding:4px 0; }
 #menu div { padding:6px 12px; cursor:pointer; }
