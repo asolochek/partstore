@@ -134,8 +134,8 @@ function wrap2(text, fs) {
 }
 // the style of a label at a location: the drawer (one line) or bin (stacked) layout, scaled to the printable height of the
 // tape set for that cabinet, at the length set for it. f = the scale; text never goes under 1.9 mm, the smallest size in use
-function styleAt(c) {
-  const kind = c.kind === 'bin' ? 'bin' : 'drawer', B = L.STYLE[kind], z = M.labelSpec(NOW, c), print = M.TAPES[z.tape], f = print / B.print;
+function styleAt(c, stacked = true) {
+  const kind = c.kind === 'bin' && stacked ? 'bin' : 'drawer', B = L.STYLE[kind], z = M.labelSpec(NOW, c), print = M.TAPES[z.tape], f = print / B.print;
   const S = { ...B, tape: z.tape, print, len: z.len, fg: z.fg, bg: z.bg };
   if (f !== 1) for (const k of ['pn', 'spec', 'pnX', 'pad', 'glyphH']) S[k] = +(B[k] * f).toFixed(2);
   if (f !== 1 && kind === 'bin') S.detX = S.pnX;
@@ -150,7 +150,7 @@ function fitPn(S, text, reserve) {
 }
 const sized = (v, f) => Math.max(1.9, +(v * f).toFixed(2));
 function drawerLabel(group) {
-  const { S, f, style } = styleAt(group[0]), t = groupText(group);
+  const { S, f, style } = styleAt(group[0], false), t = groupText(group);   // always the one-line layout, at the size of wherever the group is kept
   const base = [t.value, t.qual].filter(Boolean);
   if (style) fitPn(S, t.pn, (t.types.length ? 3.0 * f + 1.5 : 0) + (base.length ? 2.5 * f + Math.max(...base.map(l => L.textWidth(l, sized(2.0, f)))) : 0));
   const detX = S.pnX + L.textWidth(t.pn, S.pn) + 2.5 * f;
@@ -192,6 +192,9 @@ function binLabel(groups, bin) {
   const done = (lab, lay, st) => ({ kind: 'bin', ...lab, pinout: null, glyphSvg: types.length ? I.icons(types, lay.rows) : null, glyphMaxW: lay.maxW, generic: true, style: st, _tape: S.tape, _size: `${S.tape}x${S.len}`, _z: S,
     _n: types.length || entries.length, _sig: entries.map(e => e.sig).join(';'), _slot: `B:${bin}`, _bin: bin, _entries: entries });
   // the largest text size (mm, in 0.1 steps between lo and hi) at which ok(size) holds
+  // a bin labelled on narrow tape (9 or 12 mm) with one entry is a drawer label in all but name: the one-line layout reads far
+  // larger there than the stacked one shrunk to fit
+  if (entries.length === 1 && S.print < 12) { const lab = drawerLabel(entries[0].group); return { ...lab, _n: types.length || 1, _sig: entries[0].sig, _slot: `B:${bin}`, _bin: bin, _entries: entries }; }
   const largest = (lo, hi, ok) => { let v = hi; while (v > lo && !ok(v)) v = +(v - 0.1).toFixed(2); return v; };
   if (entries.length === 1 && S.print >= 12) {
     // a tall tape, one entry: two rows, so the height is used. The size goes across the full width on top, as large as the width

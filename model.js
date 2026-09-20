@@ -76,6 +76,7 @@ const KINDS = {
   '4x4w':    { title: '4 × 4 drawers with 3 wide drawers each side', cols: 4, rows: 4, drawers: 22, wide: 6 },
   'bins6x4': { title: '6 × 4 box', cols: 6, rows: 4, drawers: 0, bins: 24 },
   'bins6x2': { title: '6 × 2 box', cols: 6, rows: 2, drawers: 0, bins: 12 },
+  'bins4x3': { title: '4 × 3 box', cols: 4, rows: 3, drawers: 0, bins: 12 },
 };
 const DEFAULT_LAYOUT = { cabinets: [{ id: 'c1', title: 'Cabinet 1', kind: '8x8' }, { id: 'c2', title: 'Cabinet 2', kind: '8x8' }, { id: 'c3', title: 'Cabinet 3', kind: '8x8' }], counts: { imperial: 88, metric: 64 } };
 const layoutOf = d => ({ ...DEFAULT_LAYOUT, ...(d?.layout || {}), cabinets: (d?.layout?.cabinets || DEFAULT_LAYOUT.cabinets), counts: { ...DEFAULT_LAYOUT.counts, ...(d?.layout?.counts || {}) } });
