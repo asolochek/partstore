@@ -618,7 +618,7 @@ function openVariant(key, type, x, y) {
 const DRIVES = [['slotted', 'Slotted'], ['phillips', 'Phillips'], ['combo', 'Slotted + Phillips combo'], ['pozidriv', 'Pozidriv'], ['jis', 'JIS'], ['torx', 'Torx'], ['hex', 'Hex'], ['square', 'Square']];
 const FIXED_DRIVE = { socket: 'hex', shoulder: 'hex', setscrew: 'hex', thumb: 'none' };   // by shape
 // hex and hex washer heads: the external hex is implied; the choice is what recess, if any, is added to it
-const HEX_DRIVES = [['hex', 'None'], ['slotted', 'Slotted'], ['phillips', 'Phillips'], ['jis', 'JIS']];
+const HEX_DRIVES = [['hex', 'None'], ['slotted', 'Slotted'], ['phillips', 'Phillips'], ['pozidriv', 'Pozidriv'], ['jis', 'JIS']];
 const DRIVES_FOR = { hex: HEX_DRIVES, hexwasher: HEX_DRIVES };   // shapes with their own drive list   // carriage bolts: usually none, but some carry a slot, so the normal list applies   // heads whose drive is a given
 // materials: [key, name, finishes]; a finish is stored as `${material}-${finish}` (plain = the bare material key)
 const MAT_SCREW = [
