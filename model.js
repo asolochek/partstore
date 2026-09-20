@@ -56,9 +56,19 @@ function populated(page) {
 // means that category. A location may name another category explicitly (loc.cabinet), with its prefix letter: I12R, M3, W40F.
 // Physically the drawers sit in a row of cabinets (data.layout.cabinets, each of a KIND) and a category's numbering runs
 // on across them in category order: data.layout.counts says how many drawers each category has (the last takes the rest).
-const CABINETS = [{ id: 'imperial', prefix: 'I', title: 'Imperial machine screws', color: '#2e9e4f' },
-                  { id: 'metric', prefix: 'M', title: 'Metric machine screws', color: '#2f6db5' },
-                  { id: 'wood', prefix: 'W', title: 'Wood & sheet metal screws', color: '#c0392b' }];
+// The categories live in the model (data.categories: [{ id, prefix, title, color, fg }], in numbering order); these are the
+// ones a model without any starts with. color / fg = background and text of the category's drawer-number labels, which is
+// how the pages draw its drawer badges.
+const DEFAULT_CATEGORIES = [{ id: 'imperial', prefix: 'I', title: 'Imperial machine screws', color: '#2e9e4f', fg: '#ffffff' },
+                            { id: 'metric', prefix: 'M', title: 'Metric machine screws', color: '#2f6db5', fg: '#ffffff' },
+                            { id: 'wood', prefix: 'W', title: 'Wood & sheet metal screws', color: '#c0392b', fg: '#ffffff' }];
+const HEX = /^#[0-9a-f]{6}$/i, hex = (v, def) => HEX.test(v || '') ? v.toLowerCase() : def;
+const categoriesOf = d => (Array.isArray(d?.categories) && d.categories.length ? d.categories : DEFAULT_CATEGORIES).map(c => ({ ...c, prefix: String(c.prefix || '').toUpperCase(), color: hex(c.color, '#5b6470'), fg: hex(c.fg, '#ffffff') }));
+// The location helpers below (parseLoc, locText, …) are called without the model in hand, so whoever loads this file says where
+// the current model is: M.bind(() => data). CABINETS is then always that model's categories.
+let current = () => null;
+const bind = fn => { current = fn; };
+const cats = () => categoriesOf(current());
 // cabinet kinds: a grid of standard drawers, or a box of bins; '4x4w' adds three double-wide drawers down each side (positions 17–22)
 const KINDS = {
   '8x8':     { title: '8 × 8 drawers', cols: 8, rows: 8, drawers: 64 },
@@ -71,9 +81,9 @@ const DEFAULT_LAYOUT = { cabinets: [{ id: 'c1', title: 'Cabinet 1', kind: '8x8' 
 const layoutOf = d => ({ ...DEFAULT_LAYOUT, ...(d?.layout || {}), cabinets: (d?.layout?.cabinets || DEFAULT_LAYOUT.cabinets), counts: { ...DEFAULT_LAYOUT.counts, ...(d?.layout?.counts || {}) } });
 // the physical positions: drawers numbered 1.. across the drawer cabinets in order. Bins are named by a letter and a
 // number: each box has its own letter (box.prefix: A1…A24), loose bins not in any box are B-numbered, so a box never
-// captures bins that already exist. I, M and W are the drawer-category prefixes and cannot be bin letters.
-const BIN_LETTERS = 'ACDEFGHJKLNOPQRSTUVXYZ'.split('');
-const boxPrefix = (lay, i) => lay.cabinets[i].prefix || BIN_LETTERS[lay.cabinets.slice(0, i).filter(c => (KINDS[c.kind] || {}).bins).length] || 'Z';
+// captures bins that already exist. The categories' prefixes (I, M, W, …) cannot be bin letters.
+const binLetters = () => { const taken = new Set(cats().map(c => c.prefix)); return 'ACDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter(ch => !taken.has(ch)); };   // not B (loose bins), not a category's prefix
+const boxPrefix = (lay, i) => lay.cabinets[i].prefix || binLetters()[lay.cabinets.slice(0, i).filter(c => (KINDS[c.kind] || {}).bins).length] || 'Z';
 function positions(d) {
   const lay = layoutOf(d), out = [], bins = []; let pos = 0;
   lay.cabinets.forEach((c, cabIx) => {
@@ -83,7 +93,8 @@ function positions(d) {
   });
   // categories take their counts in order; the last one takes whatever is left
   const ranges = []; let start = 1;
-  CABINETS.forEach((c, i) => { const count = i === CABINETS.length - 1 ? Math.max(0, out.length - start + 1) : (+lay.counts[c.id] || 0); ranges.push({ id: c.id, start, count }); start += count; });
+  const C = categoriesOf(d);
+  C.forEach((c, i) => { const count = i === C.length - 1 ? Math.max(0, out.length - start + 1) : (+lay.counts[c.id] || 0); ranges.push({ id: c.id, start, count }); start += count; });
   return { layout: lay, drawers: out, bins, ranges };
 }
 const positionOf = (d, id, n) => { const r = positions(d).ranges.find(r => r.id === id); return r ? r.start + (+n) - 1 : NaN; };
@@ -95,12 +106,23 @@ const atPosition = (d, pos) => { const r = positions(d).ranges.find(r => pos >= 
 const TAPES = { 9: 7.0, 12: 9.5, 18: 15.5 };
 const LABEL_DEFAULT = { drawer: { tape: 9, len: 50 }, bin: { tape: 18, len: 50 } };
 const LABEL_LEN = { min: 20, max: 200 };
-const cleanLabel = (l, kind) => { const def = LABEL_DEFAULT[kind], tape = TAPES[+l?.tape] ? +l.tape : def.tape, len = Math.min(LABEL_LEN.max, Math.max(LABEL_LEN.min, +l?.len || def.len)); return { tape, len }; };
+// fg / bg = the tape: print colour and tape colour (black on white unless set, e.g. black on neon green for a box of bins)
+const LABEL_FG = '#000000', LABEL_BG = '#ffffff';
+const cleanLabel = (l, kind) => { const def = LABEL_DEFAULT[kind], tape = TAPES[+l?.tape] ? +l.tape : def.tape, len = Math.min(LABEL_LEN.max, Math.max(LABEL_LEN.min, +l?.len || def.len)); return { tape, len, fg: hex(l?.fg, LABEL_FG), bg: hex(l?.bg, LABEL_BG) }; };
+const plainTape = z => z.fg === LABEL_FG && z.bg === LABEL_BG;
+// a rough name for a colour, for "load the black on green tape"
+function colourName(h) {
+  const n = parseInt(hex(h, '#000000').slice(1), 16), r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, c = mx - mn;
+  if (c < 0.12) return l > 0.85 ? 'white' : l < 0.2 ? 'black' : 'grey';
+  const hue = ((mx === r ? ((g - b) / c) % 6 : mx === g ? (b - r) / c + 2 : (r - g) / c + 4) * 60 + 360) % 360;
+  return hue < 15 ? 'red' : hue < 45 ? 'orange' : hue < 70 ? 'yellow' : hue < 170 ? 'green' : hue < 200 ? 'cyan' : hue < 260 ? 'blue' : hue < 300 ? 'purple' : hue < 345 ? 'pink' : 'red';
+}
+const tapeName = z => `${colourName(z.fg)} on ${colourName(z.bg)}`;
 // the label size at a location ({ kind:'drawer', cabinet, drawer } | { kind:'bin', bin } | nothing: stock without a place prints as a default drawer label)
 function labelSpec(d, loc) {
   const P = positions(d);
   if (loc?.kind === 'bin') { const b = P.bins.find(x => x.bin === loc.bin); return cleanLabel(b ? P.layout.cabinets[b.cabIx].label : P.layout.loose?.label, 'bin'); }
-  if (loc?.kind === 'drawer') { const pos = positionOf(d, loc.cabinet || CABINETS[0].id, loc.drawer), dr = P.drawers[pos - 1]; return cleanLabel(dr ? P.layout.cabinets[dr.cabIx].label : null, 'drawer'); }
+  if (loc?.kind === 'drawer') { const pos = positionOf(d, loc.cabinet || categoriesOf(d)[0].id, loc.drawer), dr = P.drawers[pos - 1]; return cleanLabel(dr ? P.layout.cabinets[dr.cabIx].label : null, 'drawer'); }
   return cleanLabel(null, 'drawer');
 }
 // every label size in use, as "9x50" strings: the two defaults plus whatever the cabinets, boxes and loose bins set
@@ -108,8 +130,8 @@ function labelSizes(d) {
   const lay = layoutOf(d), out = [LABEL_DEFAULT.drawer, LABEL_DEFAULT.bin, cleanLabel(lay.loose?.label, 'bin'), ...lay.cabinets.map(c => cleanLabel(c.label, (KINDS[c.kind] || {}).bins ? 'bin' : 'drawer'))];
   return [...new Set(out.map(z => `${z.tape}x${z.len}`))].sort((a, b) => parseInt(a) - parseInt(b) || +a.split('x')[1] - +b.split('x')[1]);
 }
-const cabinetById = id => CABINETS.find(c => c.id === id);
-const cabinetByPrefix = ch => CABINETS.find(c => c.prefix === String(ch || '').toUpperCase());
+const cabinetById = id => cats().find(c => c.id === id);
+const cabinetByPrefix = ch => cats().find(c => c.prefix === String(ch || '').toUpperCase());
 // ---- locations ----
 // A location is { kind:'drawer', drawer:'12', half:'back'|'front'|'' } or { kind:'bin', bin:'B7' }. It can be set on the cell
 // (cell.loc), on one head type (cell.detail[type].loc) or on one drive+material of a head (cell.detail[type].items['drive|material'].loc);
@@ -121,6 +143,20 @@ const locOf = o => o?.loc?.kind === 'bin' ? (o.loc.bin ? { kind: 'bin', bin: Str
   : o?.drawer ? { kind: 'drawer', drawer: String(o.drawer), half: o.half || '' } : null;
 const overflowOf = o => (o?.overflow || []).map(l => locOf({ loc: l })).filter(Boolean);
 // a drawer location with its cabinet filled in from the page when it does not name one
+// Moving a page to another category must not move its stock: a drawer location that leaned on the page's old category gets it
+// spelled out, and one that named the new category becomes the implicit one. (Locations are { kind:'drawer', … } objects at
+// any depth: cell, head type, drive + material, overflow lists; older data has bare drawer / half fields.)
+function recategorize(page, id) {
+  const old = page.cabinet || '', walk = o => {
+    if (Array.isArray(o)) return o.forEach(walk);
+    if (!o || typeof o !== 'object') return;
+    if (o.drawer && !o.kind && !o.loc) { o.loc = { kind: 'drawer', drawer: String(o.drawer), half: o.half || '' }; delete o.drawer; delete o.half; }
+    if (o.kind === 'drawer') { if (!o.cabinet && old) o.cabinet = old; if (o.cabinet === id) delete o.cabinet; return; }
+    Object.values(o).forEach(walk);
+  };
+  walk(page.cells); walk(page.items);
+  if (id) page.cabinet = id; else delete page.cabinet;
+}
 const inCabinet = (page, l) => !l || l.kind !== 'drawer' ? l : { ...l, cabinet: l.cabinet || page.cabinet || '' };
 // the items of a cell: one per (type, drive, material) recorded, else per type; each with its resolved primary and overflow locations
 // each item also says which level its location came from: locLevel / overLevel = 'item' | 'type' | 'cell' | '' (none)
@@ -171,8 +207,8 @@ const locText = (l, home) => !l ? '' : l.kind === 'bin' ? l.bin : prefixFor(l, h
 const locLong = (l, home) => !l ? '' : l.kind === 'bin' ? `bin ${l.bin}` : `${l.cabinet && l.cabinet !== home ? cabinetById(l.cabinet)?.title.replace(/ screws$/, '') + ' ' : ''}drawer ${l.drawer}${l.half === 'back' ? ' rear' : l.half === 'front' ? ' front' : ''}`;
 function parseLoc(text) {
   const t = String(text || '').trim(); if (!t) return null;
-  let m = /^(?:bin\s*)?([a-hj-ln-vx-z])\s*(\d+)$/i.exec(t); if (m) return { kind: 'bin', bin: `${m[1].toUpperCase()}${+m[2]}` };   // B = loose bins, any other letter = a box
-  m = /^([imw])?\s*(\d+)\s*(r|rear|b|back|f|front)?$/i.exec(t); if (!m) return undefined;   // undefined = not understood
+  let m = /^(bin\s*)?([a-z])\s*(\d+)$/i.exec(t); if (m && (m[1] || !cabinetByPrefix(m[2]))) return { kind: 'bin', bin: `${m[2].toUpperCase()}${+m[3]}` };   // B = loose bins, any other letter that is not a category's = a box
+  m = /^([a-z])?\s*(\d+)\s*(r|rear|b|back|f|front)?$/i.exec(t); if (!m || (m[1] && !cabinetByPrefix(m[1]))) return undefined;   // undefined = not understood
   const h = (m[3] || '').toLowerCase();
   return { kind: 'drawer', drawer: m[2], half: /^(r|rear|b|back)$/.test(h) ? 'back' : /^(f|front)$/.test(h) ? 'front' : '', ...(m[1] ? { cabinet: cabinetByPrefix(m[1]).id } : {}) };
 }
@@ -196,10 +232,10 @@ function matShort(key) {
 const DRIVE_SHORT = { slotted: 'slotted', phillips: 'Phillips', combo: 'combo', pozidriv: 'Pozi', jis: 'JIS', torx: 'Torx', hex: 'hex', square: 'square' };
 // print order: labels with a drawer first, by drawer number then rear before front; the rest in reading order
 function drawerOrder(page, groups) {
-  const cabIx = id => Math.max(0, CABINETS.findIndex(c => c.id === id));
+  const C = cats(), cabIx = id => Math.max(0, C.findIndex(c => c.id === id));
   const key = g => { const c = g[0]; return c.kind === 'drawer' ? [0, cabIx(c.cabinet), +c.drawer, c.half === 'front' ? 1 : 0] : c.kind === 'bin' ? [1, 0, 0, 0] : [2, 0, 0, 0]; };
   return groups.map((g, i) => [g, key(g), i]).sort((a, b) => (a[1][0] - b[1][0]) || (a[1][1] - b[1][1]) || (a[1][2] - b[1][2]) || (a[1][3] - b[1][3]) || (a[2] - b[2])).map(x => x[0]);
 }
-const api = { TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, CABINETS, KINDS, DEFAULT_LAYOUT, BIN_LETTERS, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
+const api = { bind, categoriesOf, recategorize, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
 if (typeof module !== 'undefined') module.exports = api; else window.M = api;   // the same file is served to the browser
 })();

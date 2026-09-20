@@ -16,6 +16,7 @@ button { font:inherit; padding:5px 10px; border:1px solid var(--line); backgroun
 button:disabled { opacity:.45; cursor:default; }
 #status { color:var(--ink2); font-size:13px; }
 .legend { color:var(--ink2); font-size:13px; display:flex; gap:14px; flex-wrap:wrap; }
+.legend .badge { display:inline-block; font-size:11px; font-weight:600; padding:0 6px; border-radius:8px; margin-right:4px; }   /* a category, drawn like its drawer-number labels */
 .legend i { display:inline-block; width:14px; height:14px; border-radius:3px; vertical-align:-2px; margin-right:4px; border:1px solid var(--line); }
 /* the cabinets and the unassigned list scroll independently, so either can be lined up against the other */
 main { display:flex; gap:16px; padding:0 14px; flex:1; min-height:0; }
@@ -37,11 +38,13 @@ main { display:flex; gap:16px; padding:0 14px; flex:1; min-height:0; }
 #settings h3 { margin:8px 0 4px; font-size:13px; color:var(--ink2); }
 #settings table { border-collapse:collapse; width:100%; }
 #settings td { padding:3px 4px; white-space:nowrap; }
+#settings tr.hd td { color:var(--ink2); font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding-bottom:0; }
+#settings input[type=color] { width:30px; height:22px; padding:1px; vertical-align:middle; cursor:pointer; }
 #settings input, #settings select { font:inherit; padding:3px 5px; border:1px solid var(--line); border-radius:4px; }
 #settings .row { display:flex; gap:8px; margin-top:10px; align-items:center; }
 #settings .note { color:var(--ink2); font-size:12px; }
 #settings div.note { white-space:normal; max-width:560px; }
-.drawer .n { background:var(--cab, var(--ink2)); color:#fff; padding:1px 5px; border-radius:8px; }
+.drawer .n { background:var(--cab, var(--ink2)); color:var(--cabfg, #fff); padding:1px 5px; border-radius:8px; }
 .drawer.none { background:#efeeea; }
 .legend .cab { display:inline-block; width:14px; height:14px; border-radius:7px; vertical-align:-2px; margin-right:4px; }
 .drawer { background:var(--none); border-radius:6px; min-height:92px; position:relative; display:grid; grid-auto-rows:minmax(46px, 1fr); }   /* two equal halves; one label per half, so every drawer is the same size */
@@ -60,6 +63,7 @@ main { display:flex; gap:16px; padding:0 14px; flex:1; min-height:0; }
 .card.ov::after { content:' (overflow)'; font-size:11px; }
 .card.gap { border-color:var(--bad2); color:var(--bad2); font-weight:600; }
 .card.whole { border-width:2px; border-color:var(--ink2); }
+.card.tape .pg { color:inherit; opacity:.75; }
 .card .pg { display:block; font-size:10px; color:var(--ink2); overflow:hidden; text-overflow:ellipsis; }
 .card.cat { border-left:5px solid var(--cat); }   /* unassigned: the category the card belongs to, in its colour */
 .card .pg.list { color:var(--accent); }
@@ -116,6 +120,7 @@ const slotKey = loc => loc.kind === 'bin' ? `B:${loc.bin}` : `D:${loc.cabinet ||
 const cabOf = id => cab.cabinets.find(c => c.id === id);
 
 // ---- loading ----
+M.bind(() => data);   // the model's categories are this page's data
 async function load() {
   const [d, c, ic] = await Promise.all([fetch('/api/data').then(r => r.json()), fetch('/api/cabinet').then(r => r.json()), fetch('/api/icons').then(r => r.json())]);
   data = d; cab = normalize(c); labels = ic.labels || {}; render();
@@ -266,6 +271,8 @@ let dragging = null;
 function makeCard(card) {
   const el = document.createElement('div'); el.className = 'card' + (card.overflow ? ' ov' : '') + (card.gap ? ' gap' : '') + (card.whole ? ' whole' : '');
   el.draggable = true; el.innerHTML = `${card.text}<span class="pg${card.list ? ' list' : ''}">${card.page}</span>`;
+  // a card is drawn like its label: in the tape colours of the cabinet or box it is in, when those are not black on white
+  if (card.from) { const z = M.labelSpec(data, card.from); if (!M.plainTape(z)) { el.style.background = z.bg; el.style.color = z.fg; el.classList.add('tape'); } }
   if (!card.from) { const c = M.cabinetById(pageOf(card.pageId)?.cabinet); if (c) { el.classList.add('cat'); el.style.setProperty('--cat', c.color); } }
   el.ondragstart = e => { dragging = card; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; };
   el.ondragend = () => { dragging = null; el.classList.remove('dragging'); document.querySelectorAll('.over').forEach(x => x.classList.remove('over')); };
@@ -378,40 +385,71 @@ function binEl(id, entries) {
   dropZone(el, card => dropOnBin(card, id)); return el;
 }
 // ---- settings: the physical cabinets and the categories' drawer counts ----
-// tape width and label length for one cabinet, box or the loose bins; untouched defaults are not stored
+// tape width, label length and tape colours (text on tape) for one cabinet, box or the loose bins; untouched defaults are not stored
 const labelCell = (i, label, kind) => { const z = M.cleanLabel(label, kind);
-  return `<span class="note">labels</span> <select class="sTape" data-i="${i}" data-kind="${kind}">${Object.keys(M.TAPES).map(t => `<option value="${t}" ${+t === z.tape ? 'selected' : ''}>${t} mm</option>`).join('')}</select> × <input type="number" class="sLen" data-i="${i}" min="${M.LABEL_LEN.min}" max="${M.LABEL_LEN.max}" value="${z.len}" style="width:56px"> mm`; };
+  return `<select class="sTape" data-i="${i}">${Object.keys(M.TAPES).map(t => `<option value="${t}" ${+t === z.tape ? 'selected' : ''}>${t} mm</option>`).join('')}</select> × <input type="number" class="sLen" data-i="${i}" min="${M.LABEL_LEN.min}" max="${M.LABEL_LEN.max}" value="${z.len}" style="width:56px"> mm</td>` +
+    `<td><input type="color" class="sFg" data-i="${i}" value="${z.fg}" title="print colour"> on <input type="color" class="sBg" data-i="${i}" value="${z.bg}" title="tape colour">`; };
+const esc = t => String(t ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+let settingsBefore = null;   // the model as it was when the panel opened: what Undo goes back to after a Save
 function renderSettings() {
-  const lay = M.layoutOf(data), P = M.positions(data);
-  let h = `<b>Cabinets</b><div class="note">In physical order; drawer numbering runs across them, category by category.</div><table>` +
-    lay.cabinets.map((c, i) => `<tr><td><input class="sTitle" data-i="${i}" value="${c.title}" style="width:130px"></td><td><select class="sKind" data-i="${i}">${Object.entries(M.KINDS).map(([k, v]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${v.title}</option>`).join('')}</select>` +
-      (M.KINDS[c.kind]?.bins ? ` <span class="note">bin letter</span> <input class="sPrefix" data-i="${i}" value="${M.boxPrefix(lay, i)}" maxlength="1" style="width:28px;text-transform:uppercase" title="its bins are this letter + number; B is for loose bins, I/M/W are the drawer categories">` : '') + `</td>` +
+  const lay = M.layoutOf(data), P = M.positions(data), C = M.CABINETS, last = C.length - 1;
+  const used = id => data.pages.some(p => p.cabinet === id) || Object.keys(cabOf(id)?.drawers || {}).length > 0;
+  let h = `<b>Cabinets</b><div class="note">In physical order; drawer numbering runs across them, category by category.</div>
+    <table><tr class="hd"><td>Name</td><td>Kind</td><td>Labels</td><td>Text on tape</td><td></td></tr>` +
+    lay.cabinets.map((c, i) => `<tr><td><input class="sTitle" data-i="${i}" value="${esc(c.title)}" style="width:130px"></td><td><select class="sKind" data-i="${i}">${Object.entries(M.KINDS).map(([k, v]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${v.title}</option>`).join('')}</select>` +
+      (M.KINDS[c.kind]?.bins ? ` <span class="note">bin letter</span> <input class="sPrefix" data-i="${i}" value="${M.boxPrefix(lay, i)}" maxlength="1" style="width:28px;text-transform:uppercase" title="its bins are this letter + number; B is for loose bins, and the categories' letters are taken">` : '') + `</td>` +
       `<td>${labelCell(i, c.label, M.KINDS[c.kind]?.bins ? 'bin' : 'drawer')}</td><td><button type="button" class="sUp" data-i="${i}" title="move up">↑</button><button type="button" class="sDn" data-i="${i}" title="move down">↓</button><button type="button" class="sRm" data-i="${i}" title="remove">×</button></td></tr>`).join('') +
     `<tr><td>Loose bins</td><td class="note">B-numbered, not in any box</td><td>${labelCell('loose', lay.loose?.label, 'bin')}</td><td></td></tr></table>
-    <div class="note">Labels: tape width × length. Changing a size makes those labels count as unprinted.</div>
+    <div class="note">Labels: tape width × length, and the tape loaded for them. Changing either makes those labels count as unprinted; each kind of tape prints as its own job.</div>
     <div class="row"><button type="button" id="sAdd">Add cabinet</button></div>
-    <h3>Drawers per category</h3><table>` +
-    M.CABINETS.map((c, i) => { const r = P.ranges.find(r => r.id === c.id); return `<tr><td><i class="cab" style="display:inline-block;width:12px;height:12px;border-radius:6px;background:${c.color};margin-right:6px"></i>${c.title}</td><td>${i === M.CABINETS.length - 1 ? `<span class="note">the rest: ${r.count}</span>` : `<input type="number" min="0" class="sCount" data-id="${c.id}" value="${lay.counts[c.id] || 0}" style="width:70px">`}</td><td class="note">positions ${r.count ? `${r.start}–${r.start + r.count - 1}` : '(none)'}</td></tr>`; }).join('') + `</table>
+    <h3>Categories</h3><div class="note">Each numbers its drawers from 1. The colours are those of its drawer-number labels, shown on the drawer badges.</div>
+    <table><tr class="hd"><td>Badge</td><td>Name</td><td>Letter</td><td>Drawers</td><td></td><td></td></tr>` +
+    C.map((c, i) => { const r = P.ranges.find(r => r.id === c.id); return `<tr><td><input type="color" class="cFg" data-i="${i}" value="${c.fg}" title="number colour"> on <input type="color" class="cBg" data-i="${i}" value="${c.color}" title="label colour"> <span class="n" style="background:${c.color};color:${c.fg};padding:1px 6px;border-radius:8px;font-size:11px;font-weight:600">12</span></td>` +
+      `<td><input class="cTitle" data-i="${i}" value="${esc(c.title)}" style="width:190px"></td><td><input class="cPrefix" data-i="${i}" value="${c.prefix}" maxlength="1" style="width:28px;text-transform:uppercase" title="written before a drawer number on another category's page, e.g. ${c.prefix}12R"></td>` +
+      `<td>${i === last ? `<span class="note">the rest: ${r.count}</span>` : `<input type="number" min="0" class="sCount" data-id="${c.id}" value="${lay.counts[c.id] || 0}" style="width:70px">`}</td><td class="note">positions ${r.count ? `${r.start}–${r.start + r.count - 1}` : '(none)'}</td>` +
+      `<td><button type="button" class="cRm" data-i="${i}" ${used(c.id) || C.length < 2 ? 'disabled title="in use: a page belongs to it or stock is in its drawers"' : 'title="remove"'}>×</button></td></tr>`; }).join('') + `</table>
+    <div class="row"><button type="button" id="cAdd">Add category</button></div>
+    <h3>Pages</h3><div class="note">A page's bare drawer numbers mean its category. Moving a page to another category leaves its stock where it is.</div><table>` +
+    data.pages.map((p, i) => `<tr><td>${esc(p.title)}</td><td><select class="pCat" data-i="${i}"><option value="">(none: drawers need a letter)</option>${C.map(c => `<option value="${c.id}" ${p.cabinet === c.id ? 'selected' : ''}>${esc(c.title)}</option>`).join('')}</select></td></tr>`).join('') + `</table>
     <div class="note">${P.drawers.length} drawer positions, ${P.bins.length} bin positions in all.</div>
     <div class="row"><button type="button" id="sSave">Save</button><button type="button" id="sClose">Close</button></div>`;
   const el = $('#settings'); el.innerHTML = h;
-  const readLabel = (o, i) => { const t = el.querySelector(`.sTape[data-i="${i}"]`), n = el.querySelector(`.sLen[data-i="${i}"]`); if (!t) return;
-    const z = M.cleanLabel({ tape: t.value, len: n.value }, M.KINDS[o.kind]?.bins || i === 'loose' ? 'bin' : 'drawer'), def = M.LABEL_DEFAULT[M.KINDS[o.kind]?.bins || i === 'loose' ? 'bin' : 'drawer'];
-    if (z.tape === def.tape && z.len === def.len) delete o.label; else o.label = z; };
-  const read = () => { const l = M.layoutOf(data); l.cabinets = [...el.querySelectorAll('.sTitle')].map((t, i) => { const c = { ...l.cabinets[i], title: t.value.trim() || l.cabinets[i].title, kind: el.querySelector(`.sKind[data-i="${i}"]`).value }; delete c.first; const f = el.querySelector(`.sPrefix[data-i="${i}"]`); if (f) { const v = f.value.trim().toUpperCase(); if (M.BIN_LETTERS.includes(v)) c.prefix = v; } if (!!M.KINDS[c.kind]?.bins === !!M.KINDS[l.cabinets[i].kind]?.bins) readLabel(c, i); else delete c.label;   // drawers <-> bins: back to that kind's default size
-    return c; }); l.loose = { ...(l.loose || {}) }; readLabel(l.loose, 'loose'); if (!Object.keys(l.loose).length) delete l.loose; el.querySelectorAll('.sCount').forEach(x => l.counts[x.dataset.id] = +x.value || 0); return l; };
-  const restage = l => { data.layout = l; renderSettings(); placeSettings(); };
-  el.querySelectorAll('.sUp').forEach(b => b.onclick = () => { const l = read(), i = +b.dataset.i; if (i > 0) [l.cabinets[i - 1], l.cabinets[i]] = [l.cabinets[i], l.cabinets[i - 1]]; restage(l); });
-  el.querySelectorAll('.sDn').forEach(b => b.onclick = () => { const l = read(), i = +b.dataset.i; if (i < l.cabinets.length - 1) [l.cabinets[i + 1], l.cabinets[i]] = [l.cabinets[i], l.cabinets[i + 1]]; restage(l); });
-  el.querySelectorAll('.sRm').forEach(b => b.onclick = () => { const l = read(); l.cabinets.splice(+b.dataset.i, 1); restage(l); });
-  $('#sAdd').onclick = () => { const l = read(); const n = l.cabinets.length + 1; l.cabinets.push({ id: 'c' + Date.now().toString(36), title: `Cabinet ${n}`, kind: '8x8' }); restage(l); };
-  el.querySelectorAll('.sKind, .sCount, .sPrefix').forEach(x => x.onchange = () => restage(read()));
-  $('#sSave').onclick = async () => { data.layout = read(); snapshot(); if (await commit('layout saved')) { $('#settings').style.display = 'none'; } };
+  const q = (cls, i) => el.querySelector(`.${cls}[data-i="${i}"]`);
+  const readLabel = (o, i) => { const t = q('sTape', i); if (!t) return;
+    const kind = M.KINDS[o.kind]?.bins || i === 'loose' ? 'bin' : 'drawer', z = M.cleanLabel({ tape: t.value, len: q('sLen', i).value, fg: q('sFg', i).value, bg: q('sBg', i).value }, kind), def = M.LABEL_DEFAULT[kind];
+    if (z.tape === def.tape && z.len === def.len && M.plainTape(z)) delete o.label; else { o.label = z; if (M.plainTape(z)) { delete z.fg; delete z.bg; } } };
+  // the panel's fields -> { layout, categories }; letters that would clash (B, another category's, a box's) keep their old value
+  const read = () => {
+    const l = M.layoutOf(data);
+    const cats = C.map((c, i) => ({ id: c.id, prefix: c.prefix, title: q('cTitle', i).value.trim() || c.title, color: q('cBg', i).value, fg: q('cFg', i).value }));
+    cats.forEach((c, i) => { const v = q('cPrefix', i).value.trim().toUpperCase(); if (/^[A-Z]$/.test(v) && v !== 'B' && !cats.some((x, j) => j !== i && x.prefix === v) && !l.cabinets.some((b, j) => M.KINDS[b.kind]?.bins && M.boxPrefix(l, j) === v)) c.prefix = v; });
+    l.cabinets = [...el.querySelectorAll('.sTitle')].map((t, i) => { const c = { ...l.cabinets[i], title: t.value.trim() || l.cabinets[i].title, kind: q('sKind', i).value }; delete c.first;
+      const f = q('sPrefix', i); if (f) { const v = f.value.trim().toUpperCase(); if (M.BIN_LETTERS.includes(v) && !cats.some(x => x.prefix === v)) c.prefix = v; }
+      if (!!M.KINDS[c.kind]?.bins === !!M.KINDS[l.cabinets[i].kind]?.bins) readLabel(c, i); else delete c.label;   // drawers <-> bins: back to that kind's default label
+      return c; });
+    l.loose = { ...(l.loose || {}) }; readLabel(l.loose, 'loose'); if (!Object.keys(l.loose).length) delete l.loose;
+    el.querySelectorAll('.sCount').forEach(x => l.counts[x.dataset.id] = +x.value || 0);
+    return { layout: l, categories: cats };
+  };
+  const restage = st => { data.layout = st.layout; data.categories = st.categories; renderSettings(); placeSettings(); };
+  el.querySelectorAll('.sUp').forEach(b => b.onclick = () => { const st = read(), l = st.layout, i = +b.dataset.i; if (i > 0) [l.cabinets[i - 1], l.cabinets[i]] = [l.cabinets[i], l.cabinets[i - 1]]; restage(st); });
+  el.querySelectorAll('.sDn').forEach(b => b.onclick = () => { const st = read(), l = st.layout, i = +b.dataset.i; if (i < l.cabinets.length - 1) [l.cabinets[i + 1], l.cabinets[i]] = [l.cabinets[i], l.cabinets[i + 1]]; restage(st); });
+  el.querySelectorAll('.sRm').forEach(b => b.onclick = () => { const st = read(); st.layout.cabinets.splice(+b.dataset.i, 1); restage(st); });
+  $('#sAdd').onclick = () => { const st = read(), n = st.layout.cabinets.length + 1; st.layout.cabinets.push({ id: 'c' + Date.now().toString(36), title: `Cabinet ${n}`, kind: '8x8' }); restage(st); };
+  // a new category goes last and takes "the rest", so the one that was last keeps the drawers it has now as a fixed count
+  $('#cAdd').onclick = () => { const st = read(), prev = C[last], taken = new Set(['B', ...st.categories.map(c => c.prefix), ...st.layout.cabinets.map((b, j) => M.KINDS[b.kind]?.bins ? M.boxPrefix(st.layout, j) : '')]);
+    st.layout.counts[prev.id] = P.ranges.find(r => r.id === prev.id).count;
+    st.categories.push({ id: 'k' + Date.now().toString(36), prefix: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find(ch => !taken.has(ch)) || '', title: 'New category', color: '#5b6470', fg: '#ffffff' }); restage(st); };
+  el.querySelectorAll('.cRm').forEach(b => b.onclick = () => { const st = read(), [gone] = st.categories.splice(+b.dataset.i, 1); delete st.layout.counts[gone.id]; restage(st); });
+  el.querySelectorAll('.pCat').forEach(x => x.onchange = () => { const st = read(); M.recategorize(data.pages[+x.dataset.i], x.value); restage(st); });
+  el.querySelectorAll('.sKind, .sCount, .sPrefix, .cPrefix, .cBg, .cFg').forEach(x => x.onchange = () => restage(read()));
+  $('#sSave').onclick = async () => { const st = read(); data.layout = st.layout; data.categories = st.categories; if (settingsBefore) { undoStack.push(settingsBefore); if (undoStack.length > 30) undoStack.shift(); $('#undo').disabled = false; }
+    if (await commit('cabinets saved')) { settingsBefore = null; $('#settings').style.display = 'none'; } };
   $('#sClose').onclick = () => { $('#settings').style.display = 'none'; load(); };
 }
 // under the Cabinets… button, its left edge on the button's, pulled back in where the window is too narrow for that
 function placeSettings() { const t = $('#settings'), r = $('#setupBtn').getBoundingClientRect(); t.style.right = 'auto'; t.style.top = `${Math.round(r.bottom + 8)}px`; t.style.maxHeight = `calc(100vh - ${Math.round(r.bottom + 8) + 14}px)`; t.style.left = `${Math.max(14, Math.min(r.left, window.innerWidth - t.offsetWidth - 14))}px`; }
-$('#setupBtn').onclick = () => { const t = $('#settings'); if (t.style.display === 'block') { t.style.display = 'none'; load(); } else { renderSettings(); t.style.display = 'block'; placeSettings(); } };
+$('#setupBtn').onclick = () => { const t = $('#settings'); if (t.style.display === 'block') { t.style.display = 'none'; load(); } else { settingsBefore = JSON.stringify(data); renderSettings(); t.style.display = 'block'; placeSettings(); } };
 window.addEventListener('resize', () => { if ($('#settings').style.display === 'block') placeSettings(); });
 function drawerZones(el, c, n, d) {
   // a whole-drawer card fills the drawer; older undivided assignments that share a drawer with half entries show all three zones
@@ -431,7 +469,7 @@ function drawerZones(el, c, n, d) {
 }
 function render() {
   const P = M.positions(data), lay = P.layout;
-  $('#cablegend').innerHTML = cab.cabinets.map(c => { const r = P.ranges.find(r => r.id === c.id); return `<span><i class="cab" style="background:${c.color}"></i>${c.title} (${r ? r.count : 0} drawers)</span>`; }).join('');
+  $('#cablegend').innerHTML = cab.cabinets.map(c => { const r = P.ranges.find(r => r.id === c.id); return `<span><b class="badge" style="background:${c.color};color:${c.fg || '#fff'}">${c.prefix}</b>${c.title} (${r ? r.count : 0} drawers)</span>`; }).join('');
   $('#tabs').innerHTML = lay.cabinets.map(c => `<span class="tab${hidden.has(c.id) ? '' : ' on'}" data-v="${c.id}" title="show / hide">${c.title}</span>`).join('');
   $('#tabs').querySelectorAll('.tab').forEach(t => t.onclick = () => { if (hidden.has(t.dataset.v)) hidden.delete(t.dataset.v); else hidden.add(t.dataset.v); rememberHidden(); render(); });
   const wrap = $('#cabinets'); wrap.innerHTML = '';
@@ -452,7 +490,7 @@ function render() {
       el.className = 'drawer' + (x.wide ? ' wide' : '');
       if (!at) { el.classList.add('none'); el.innerHTML = `<span class="n">–</span>`; el.title = `position ${x.pos}: no category reaches here`; return el; }
       const c = cabOf(at.cabinet), n = at.drawer, d = c.drawers[String(n)];
-      el.style.setProperty('--cab', c.color); el.title = `${c.title} drawer ${n} (position ${x.pos})`;
+      el.style.setProperty('--cab', c.color); el.style.setProperty('--cabfg', c.fg || '#fff'); el.title = `${c.title} drawer ${n} (position ${x.pos})`;
       el.innerHTML = `<span class="n">${n}</span>`;
       drawerZones(el, c, n, d); return el;
     };

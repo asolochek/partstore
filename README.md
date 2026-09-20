@@ -55,6 +55,11 @@ records what has been printed.
   drawers each category has; the last category takes the rest. Each box has a letter of its own and holds bins A1, A2, …; loose bins not in a box are B-numbered. A page belongs
   to a category, so a bare drawer number means that category; a prefix reaches another (`I12R`, `M3`, `W40F`), and a list
   page with no category of its own always needs the prefix.
+  The drawer map's **Cabinets…** panel names the cabinets, adds and renames categories, sets each one's letter and the colours
+  of its drawer-number labels (number on label; shown on the drawer badges and the grid's location badges), and says which
+  category each page belongs to; moving a page to another category leaves its stock where it is. A cabinet, a box of bins or
+  the loose bins can also name the tape their part labels are printed on (say black on neon green): cards and previews are
+  drawn in it, and each kind of tape prints as its own job, named in the "load the tape" prompt.
 - **Cabinet** opens the drawer map, all pages at once, with a tab per physical cabinet (the Unassigned list is the same on every tab), each drawer badged with its category colour and number: every label
   is a card in its drawer half, bin, or the Unassigned column on the right. Drag a card to a half, a bin, "drop here for a
   new bin", or back to Unassigned. Dropping on an occupied half offers **Merge** (both become one label) or **Insert**,

@@ -66,6 +66,7 @@ td.washer { background:var(--none); }
 .drawer { cursor:pointer; padding:0 3px; border-radius:3px; }
 .drawer:hover { background:#fff; }
 .drawer.set { color:var(--ink); font-weight:600; }
+.drawer.badge { padding:0 6px; border-radius:8px; font-size:11.5px; }
 .print { cursor:pointer; opacity:.55; }
 .rowprint { margin-left:6px; font-weight:400; }
 .print:hover { opacity:1; color:var(--accent); }
@@ -160,6 +161,7 @@ table.list .drawer { white-space:nowrap; }
 <script src="/print.js"></script>
 <script>
 let data, icons, printed = {}, pageId, saveTimer;
+M.bind(() => data);   // the model's categories are this page's data
 const $ = s => document.querySelector(s);
 function lengthText(page, len) {
   if (page.units === 'mm') return `${+len}mm`;
@@ -213,12 +215,22 @@ function toggle(key, type) {
 // can have its own primary location plus overflow locations, the most specific one winning (see model.js)
 const halfText = h => h === 'back' ? 'rear' : h === 'front' ? 'front' : '';
 // summary of what is set on an object holding loc/overflow: "drawer 12 rear +B3", "bin B2", or the fallback text
+// a set location is drawn as a badge: a drawer in the colours of its category's drawer-number labels, a bin in the tape colours
+// of its box (the usual blue when that is plain black on white)
+function locBadge(el, o) {
+  const l = M.locOf(o); if (!l) return el;
+  let bg = '#2f6db5', fg = '#ffffff';
+  if (l.kind === 'drawer') { const c = M.cabinetById(l.cabinet || page().cabinet); if (!c) return el; bg = c.color; fg = c.fg; }
+  else { const z = M.labelSpec(data, l); if (!M.plainTape(z)) { bg = z.bg; fg = z.fg; } }
+  el.classList.add('badge'); el.style.background = bg; el.style.color = fg; return el;
+}
 function locSummary(o, fallback = '') {
   const l = M.locOf(o), over = M.overflowOf(o), home = page().cabinet;
   return (l ? M.locLong(l, home) : fallback) + (over.length ? ' +' + over.map(x => M.locText(x, home)).join(',') : '');
 }
 // the cabinet a page's bare drawer numbers refer to; a list page without one needs the prefix (I, M, W) in its locations
-const cabHint = () => page().cabinet ? `${M.cabinetById(page().cabinet).title.replace(/ screws$/, '')} cabinet; I/M/W prefix for another, e.g. M12R` : 'this page has no cabinet: prefix drawers with I, M or W, e.g. W12R';
+const catLetters = () => M.CABINETS.map(c => c.prefix).join(' / ');
+const cabHint = () => page().cabinet ? `${(M.cabinetById(page().cabinet)?.title || '').replace(/ screws$/, '')} cabinet; ${catLetters()} prefix for another, e.g. ${M.CABINETS[0].prefix}12R` : `this page has no cabinet: prefix drawers with ${catLetters()}, e.g. ${M.CABINETS[0].prefix}12R`;
 // the editor: primary and overflow locations of `target` (a cell, a head type's detail, or one drive+material's item)
 function openLoc(key, target, title, x, y, back) {
   $('#pop').innerHTML = `<h3>Location · ${title}</h3>
@@ -230,7 +242,7 @@ function openLoc(key, target, title, x, y, back) {
   $('#popGo').onclick = () => {
     const prim = M.parseLoc($('#popLoc').value), over = M.parseLocs($('#popOver').value);
     if (prim === undefined || over.some(l => l === undefined)) return alert('Could not read a location. Use 12, 12R, 12F, M12R or B3.');
-    if (!page().cabinet && [prim, ...over].some(l => l && l.kind === 'drawer' && !l.cabinet)) return alert('This page has no cabinet of its own: prefix drawer numbers with I, M or W (e.g. W12R).');
+    if (!page().cabinet && [prim, ...over].some(l => l && l.kind === 'drawer' && !l.cabinet)) return alert(`This page has no cabinet of its own: prefix drawer numbers with ${catLetters()} (e.g. ${M.CABINETS[0].prefix}12R).`);
     for (const l of [prim, ...over]) if (l && l.cabinet === page().cabinet) delete l.cabinet;   // the page's own cabinet stays implicit
     delete target.drawer; delete target.half;   // the old fields
     if (prim) target.loc = prim; else delete target.loc;
@@ -273,7 +285,7 @@ function cellTd(key, types, extraClass = '', universe = null) {
   if (universe && universe.some(sh => !shown.includes(defVariant(page(), sh)))) { const m = document.createElement('div'); m.className = 'more'; m.textContent = '…'; m.title = 'other head shapes'; m.onclick = e => openMore(key, universe, e.clientX, e.clientY); ic.appendChild(m); }
   td.appendChild(ic);
   const meta = document.createElement('div'); meta.className = 'meta';
-  const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(c) ? ' set' : ''); dr.textContent = locSummary(c, 'location?'); dr.title = 'where this cell lives (a head type or a drive+material can override it: right-click the icon)'; dr.onclick = e => openLoc(key, cell(key), cellTextClient(page(), key), e.clientX, e.clientY);
+  const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(c) ? ' set' : ''); dr.textContent = locSummary(c, 'location?'); locBadge(dr, c); dr.title = 'where this cell lives (a head type or a drive+material can override it: right-click the icon)'; dr.onclick = e => openLoc(key, cell(key), cellTextClient(page(), key), e.clientX, e.clientY);
   const pr = document.createElement('span'); pr.className = 'print'; pr.textContent = '⎙'; pr.title = 'PDF for this label'; pr.onclick = e => printCell(key, e.clientX, e.clientY);
   pr.onmouseenter = () => showPreview(key); pr.onmouseleave = hidePreview;
   meta.appendChild(dr); meta.appendChild(pr); td.appendChild(meta);
@@ -388,7 +400,7 @@ function renderMobile(p, lens) {
     if (universe && universe.some(sh => !shown.includes(defVariant(p, sh)))) { const m = document.createElement('div'); m.className = 'more'; m.textContent = '…'; m.onclick = e => openMore(key, universe, e.clientX, e.clientY); ic.appendChild(m); }
     card.appendChild(ic);
     const meta = document.createElement('div'); meta.className = 'meta';
-    const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(c) ? ' set' : ''); dr.textContent = locSummary(c, 'location?'); dr.onclick = e => openLoc(key, cell(key), cellTextClient(p, key), e.clientX, e.clientY);
+    const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(c) ? ' set' : ''); dr.textContent = locSummary(c, 'location?'); locBadge(dr, c); dr.onclick = e => openLoc(key, cell(key), cellTextClient(p, key), e.clientX, e.clientY);
     const pr = document.createElement('span'); pr.className = 'print'; pr.textContent = '⎙'; pr.onclick = e => printCell(key, e.clientX, e.clientY);
     meta.appendChild(dr); meta.appendChild(pr); card.appendChild(meta);
     g.appendChild(card);
@@ -408,7 +420,7 @@ function renderList(p) {
     const tx = document.createElement('input'); tx.type = 'text'; tx.value = it.text || ''; tx.placeholder = 'e.g. Banana plugs'; tx.oninput = () => { it.text = tx.value; tr.className = it.text.trim() ? 'have' : ''; save(); }; td('txt', tx);
     const dt = document.createElement('input'); dt.type = 'text'; dt.value = it.detail || ''; dt.placeholder = 'optional'; dt.oninput = () => { it.detail = dt.value; save(); }; td('det', dt);
     const gl = document.createElement('button'); gl.type = 'button'; gl.className = 'gl'; gl.innerHTML = it.glyph && icons.svg[it.glyph] ? icons.svg[it.glyph] : 'none'; gl.title = it.glyph ? (icons.labels[it.glyph] || it.glyph) : 'choose a glyph'; gl.onclick = e => openGlyph(it, e.clientX, e.clientY); td('', gl);
-    const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(it) ? ' set' : ''); dr.textContent = locSummary(it, 'location?'); dr.onclick = e => openLoc(it.id, it, it.text || 'this line', e.clientX, e.clientY); td('', dr);
+    const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(it) ? ' set' : ''); dr.textContent = locSummary(it, 'location?'); locBadge(dr, it); dr.onclick = e => openLoc(it.id, it, it.text || 'this line', e.clientX, e.clientY); td('', dr);
     const img = document.createElement('img'); img.className = 'lpv'; img.alt = ''; img.dataset.src = `/api/preview.png?page=${encodeURIComponent(p.id)}&key=${encodeURIComponent(it.id)}`; img.src = img.dataset.src + '&t=' + Date.now(); if (!(it.text || '').trim()) img.style.visibility = 'hidden'; td('pv', img);
     const pr = document.createElement('span'); pr.className = 'print'; pr.textContent = '⎙'; pr.title = 'PDF for this label'; pr.onclick = e => printCell(it.id, e.clientX, e.clientY); pr.onmouseenter = () => showPreview(it.id); pr.onmouseleave = hidePreview; td('', pr);
     const rm = document.createElement('span'); rm.className = 'del'; rm.textContent = '×'; rm.title = 'remove this line'; rm.onclick = () => { if (!(it.text || '').trim() || confirm(`Remove "${it.text}"?`)) { p.items = p.items.filter(x => x !== it); save(); render(); } }; td('', rm);

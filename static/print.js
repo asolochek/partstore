@@ -17,16 +17,16 @@ async function sendToPrinter(blob, n, size) {
     status(`printed ${j.pages} label${j.pages == 1 ? '' : 's'} on ${printer}`); return true;
   } catch (e) { alert('Could not send the labels to the server. Downloading the PDF instead.'); return false; }
 }
-// one request can span several label sizes (each cabinet or box sets its own): the server answers with the first and names
-// the rest in X-Sizes, which are fetched one by one. Returns the first response (for its X-Bins), or null on failure
+// one request can span several groups of labels (a tape colour and width at one length; each cabinet or box sets its own): the
+// server answers with the first and names the rest in X-Groups, which are fetched one by one. Returns the first response (for its X-Bins), or null on failure
 async function labelsBySize(body) {
   const ask = b => fetch('/api/labels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
   const r = await ask(body);
   if (!r.ok) { status(''); alert((await r.json()).error || 'failed'); return null; }
   if (r.status === 204) return r;
-  const first = r.headers.get('X-Size'), rest = (r.headers.get('X-Sizes') || '').split(',').filter(z => z && z !== first);
+  const first = r.headers.get('X-Group'), rest = (r.headers.get('X-Groups') || '').split(',').filter(z => z && z !== first);
   await deliver(r);
-  for (const size of rest) { const rz = await ask({ ...body, size }); if (!rz.ok) { status(''); alert((await rz.json()).error || 'failed'); return null; } await deliver(rz); }
+  for (const group of rest) { const rz = await ask({ ...body, group }); if (!rz.ok) { status(''); alert((await rz.json()).error || 'failed'); return null; } await deliver(rz); }
   return r;
 }
 // the labels a request names, then those of the bins it touches: the server lists them in X-Bins and they follow as a second
@@ -40,15 +40,15 @@ async function printLabels(body, onlyNew) {
 // delivers one PDF: to the helper's printer queue for that tape, or as a download. The tape in the printer cannot be
 // queried, so a direct print first asks for that tape to be loaded; Cancel skips the labels of that size.
 async function deliver(r) {
-  const n = r.headers.get('X-Label-Count'), tape = r.headers.get('X-Tape') || '9', size = r.headers.get('X-Size') || `${tape}x50`; const blob = await r.blob();
+  const n = r.headers.get('X-Label-Count'), tape = r.headers.get('X-Tape') || '9', size = r.headers.get('X-Size') || `${tape}x50`, colour = r.headers.get('X-Tape-Name') || 'black on white'; const blob = await r.blob();
   if (HS.get().direct) {
-    if (!confirm(`${n} label${n == 1 ? '' : 's'}, ${size.replace('x', ' × ')} mm, on ${tape} mm tape. Load the ${tape} mm tape, then OK — or Cancel to skip these.`)) { status(`${tape} mm labels skipped`); return true; }
+    if (!confirm(`${n} label${n == 1 ? '' : 's'}, ${size.replace('x', ' × ')} mm, on ${tape} mm ${colour} tape. Load the ${tape} mm ${colour} tape, then OK — or Cancel to skip these.`)) { status(`${tape} mm labels skipped`); return true; }
     if (await sendToPrinter(blob, n, size)) return true;
   }
   // download rather than open: a pop-up would be blocked, and the file is what gets printed anyway
   const name = (/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || 'labels.pdf';
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-  status(`${n} ${size.replace('x', ' × ')} mm label${n == 1 ? '' : 's'} → ${name}`);
+  status(`${n} ${size.replace('x', ' × ')} mm ${colour === 'black on white' ? '' : colour + ' '}label${n == 1 ? '' : 's'} → ${name}`);
   return false;
 }

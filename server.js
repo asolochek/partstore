@@ -17,6 +17,7 @@ app.use('/helper', express.static(path.join(__dirname, 'helper'), { index: false
 app.get('/model.js', (req, res) => res.sendFile(path.join(__dirname, 'model.js')));   // the page uses the same location logic as the server
 let NOW = null;   // the model as last read: the label builders look up each location's label size in it
 const load = () => NOW = JSON.parse(fs.readFileSync(DATA, 'utf8'));
+M.bind(() => NOW);   // the model's categories (their prefixes, order and colours) come from the data
 const loadPrinted = () => fs.existsSync(PRINTED) ? JSON.parse(fs.readFileSync(PRINTED, 'utf8')) : {};
 app.get('/api/data', (req, res) => res.json(load()));
 // Saves carry the revision they were loaded from; a stale copy (another tab, or a model edit made here) is refused with the
@@ -87,10 +88,11 @@ function groupQual(group) {
 // the text of one location's label: { pn, value, qual, types, sig }
 // cells that share a location print as ONE label: "#10 Washer" (washers + lock washers), "#4-40 Nut" (nuts + lock nuts),
 // or for screws the size in the big slot and the lengths on the detail line; the icons are the union of the cells'
-// a label of a non-default size says so in its signature, so changing a cabinet's label size makes its labels unprinted
+// a label of a non-default size or tape colour says so in its signature, so changing either makes those labels unprinted
 function groupText(group) {
   const t = groupText0(group), c = group[0], def = M.LABEL_DEFAULT[c.kind === 'bin' ? 'bin' : 'drawer'], z = M.labelSpec(NOW, c);
-  return z.tape === def.tape && z.len === def.len ? t : { ...t, sig: `${t.sig}|${z.tape}x${z.len}` };
+  const extra = (z.tape === def.tape && z.len === def.len ? '' : `|${z.tape}x${z.len}`) + (M.plainTape(z) ? '' : `|${z.fg}/${z.bg}`);
+  return extra ? { ...t, sig: t.sig + extra } : t;
 }
 function groupText0(group) {
   const types = [...new Set(group.flatMap(pt => pt.types || []))];
@@ -134,7 +136,7 @@ function wrap2(text, fs) {
 // tape set for that cabinet, at the length set for it. f = the scale; text never goes under 1.9 mm, the smallest size in use
 function styleAt(c) {
   const kind = c.kind === 'bin' ? 'bin' : 'drawer', B = L.STYLE[kind], z = M.labelSpec(NOW, c), print = M.TAPES[z.tape], f = print / B.print;
-  const S = { ...B, tape: z.tape, print, len: z.len };
+  const S = { ...B, tape: z.tape, print, len: z.len, fg: z.fg, bg: z.bg };
   if (f !== 1) for (const k of ['pn', 'spec', 'pnX', 'pad', 'glyphH']) S[k] = +(B[k] * f).toFixed(2);
   if (f !== 1 && kind === 'bin') S.detX = S.pnX;
   S.pn = Math.max(S.pn, 1.9); S.spec = Math.max(S.spec, 1.9);
@@ -163,7 +165,7 @@ function drawerLabel(group) {
   const extra = pick.lines.length ? { spec: pick.sp, detX, detCenter: pick.lines.length === 1 } : {};
   const isList = group.length === 1 && M.isList(group[0].page);
   return { kind: 'drawer', pn: t.pn, value: pick.lines[0] || '', specs: pick.lines[1] || '', pinout: null, glyphSvg: t.types.length ? I.icons(t.types, pick.lay.rows) : null, glyphMaxW: pick.lay.maxW, ...extra,
-           generic: true, style, _tape: S.tape, _size: `${S.tape}x${S.len}`, _n: t.types.length || (isList ? 1 : 0), _sig: t.sig, _slot: groupSlot(group) };
+           generic: true, style, _tape: S.tape, _size: `${S.tape}x${S.len}`, _z: S, _n: t.types.length || (isList ? 1 : 0), _sig: t.sig, _slot: groupSlot(group) };
 }
 // an 18 mm bin label: everything in the bin, from every page. One entry: the size big with its details under it; several:
 // one line per entry at a size that fits (up to six lines)
@@ -187,7 +189,7 @@ function binLabel(groups, bin) {
   const { S, f, style } = styleAt({ kind: 'bin', bin }), entries = binEntries(groups, bin);
   const types = [...new Set(entries.flatMap(e => e.types))];
   const avail = S.print - 2 * S.pad, CAP = L.CAP;
-  const done = (lab, lay, st) => ({ kind: 'bin', ...lab, pinout: null, glyphSvg: types.length ? I.icons(types, lay.rows) : null, glyphMaxW: lay.maxW, generic: true, style: st, _tape: S.tape, _size: `${S.tape}x${S.len}`,
+  const done = (lab, lay, st) => ({ kind: 'bin', ...lab, pinout: null, glyphSvg: types.length ? I.icons(types, lay.rows) : null, glyphMaxW: lay.maxW, generic: true, style: st, _tape: S.tape, _size: `${S.tape}x${S.len}`, _z: S,
     _n: types.length || entries.length, _sig: entries.map(e => e.sig).join(';'), _slot: `B:${bin}`, _bin: bin, _entries: entries });
   // the largest text size (mm, in 0.1 steps between lo and hi) at which ok(size) holds
   const largest = (lo, hi, ok) => { let v = hi; while (v > lo && !ok(v)) v = +(v - 0.1).toFixed(2); return v; };
@@ -242,10 +244,10 @@ function binLabel(groups, bin) {
 }
 const allBins = d => [...new Set(d.pages.flatMap(p => M.bins(p)))].sort(M.binOrder);
 // drawer spec: "12-16, 20, 30R, M3-5" -> predicate on (cabinet, drawer, half). A bare number matches both halves of a divided
-// drawer; a term without a cabinet prefix (I, M, W) means `home`, the cabinet of the page the request came from
+// drawer; a term without a category prefix (I, M, W, …) means `home`, the cabinet of the page the request came from
 function drawerMatcher(spec, home) {
   const terms = String(spec).split(/[,\s]+/).filter(Boolean).map(t => {
-    const m = /^([imwIMW])?(\d+)(?:-(\d+))?([rRfFbB])?$/.exec(t); if (!m) return null;
+    const m = /^([a-zA-Z])?(\d+)(?:-(\d+))?([rRfFbB])?$/.exec(t); if (!m || (m[1] && !M.cabinetByPrefix(m[1]))) return null;
     const half = m[4] ? (/[fF]/.test(m[4]) ? 'front' : 'back') : null;
     return { cabinet: m[1] ? M.cabinetByPrefix(m[1]).id : (home || ''), lo: +m[2], hi: +(m[3] || m[2]), half };
   });
@@ -259,27 +261,28 @@ function binList(d, spec) {
   if (Array.isArray(spec)) return have.filter(b => spec.includes(b));
   const want = new Set();
   for (const t of String(spec).split(/[,\s]+/).filter(Boolean)) {
-    const m = /^([a-hj-ln-vx-z])?(\d+)(?:-(\d+))?$/i.exec(t); if (!m) return null;
+    const m = /^([a-z])?(\d+)(?:-(\d+))?$/i.exec(t); if (!m || (m[1] && M.cabinetByPrefix(m[1]))) return null;
     const pre = (m[1] || 'B').toUpperCase();
     for (let n = +m[2]; n <= +(m[3] || m[2]); n++) want.add(`${pre}${n}`);
   }
   return have.filter(b => want.has(b));
 }
-// one PDF holds the labels of one size (tape width x length, e.g. "9x50"), since a printer queue is set up for one size: the
-// size asked for, else the first (narrowest tape, then shortest). X-Sizes lists every size the request has labels for, so the
-// caller can come back for the others
-async function sendPdf(res, labels, name, bins, size) {
+// One PDF holds the labels of one kind of tape at one length: a group is "9x50", or "18x50/#000000-#39ff14" when the tape is not
+// black on white. The PDF is the group asked for, else the first (narrowest tape, then shortest). X-Groups lists every group
+// the request has labels for, so the caller can come back for the others; X-Size picks the printer queue, X-Tape-Name is what to load
+const groupOf = l => l._size + (M.plainTape(l._z) ? '' : `/${l._z.fg}-${l._z.bg}`);
+async function sendPdf(res, labels, name, bins, group) {
   if (!labels.length) return res.status(400).json({ error: 'nothing to print' });
-  const num = z => z.split('x').map(Number), sizes = [...new Set(labels.map(l => l._size))].sort((a, b) => num(a)[0] - num(b)[0] || num(a)[1] - num(b)[1]);
-  const pick = sizes.includes(size) ? size : sizes[0];
-  labels = labels.filter(l => l._size === pick); if (sizes.length > 1) name += `-${pick}mm`;
+  const num = z => z.split('/')[0].split('x').map(Number), groups = [...new Set(labels.map(groupOf))].sort((a, b) => num(a)[0] - num(b)[0] || num(a)[1] - num(b)[1] || a.localeCompare(b));
+  const pick = groups.includes(group) ? group : groups[0];
+  labels = labels.filter(l => groupOf(l) === pick); if (groups.length > 1) name += `-${pick.replace(/[\/#]+/g, '_')}mm`;
   L.warnings.length = 0;
   const pdf = await L.pdf(labels);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="labels-${name.replace(/[^\w.-]+/g, '_')}.pdf"`);
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Label-Count, X-Tape, X-Size, X-Sizes, X-Bins');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Label-Count, X-Tape, X-Size, X-Group, X-Groups, X-Tape-Name, X-Bins');
   res.setHeader('X-Label-Count', String(labels.length));
-  res.setHeader('X-Tape', String(labels[0]._tape)); res.setHeader('X-Size', pick); res.setHeader('X-Sizes', sizes.join(','));
+  res.setHeader('X-Tape', String(labels[0]._tape)); res.setHeader('X-Size', labels[0]._size); res.setHeader('X-Group', pick); res.setHeader('X-Groups', groups.join(',')); res.setHeader('X-Tape-Name', M.tapeName(labels[0]._z));
   if (bins?.length) res.setHeader('X-Bins', bins.join(','));   // bin labels the caller should fetch separately (18 mm tape)
   if (L.warnings.length) console.warn(L.warnings.join('\n'));
   res.send(Buffer.from(pdf));
@@ -287,7 +290,7 @@ async function sendPdf(res, labels, name, bins, size) {
 // the printed record key of a portion, and whether a group is already printed as it stands
 const printedKey = pt => `${pt.page.id}|${pt.key}`;
 // POST /api/labels -> PDF of 9 mm drawer labels: { page, keys: [...] | "all" | "new" [, slots: [...]] } or { drawers: "12-16, 20, 30R" }
-// (every page). Either may add size: "9x70" for the labels of that size (see sendPdf). Bin labels come from a separate call: { bins: "all" | "B1, B3-5" | ["B1", ...] [, only: "new"] }.
+// (every page). Either may add group: "9x70" for the labels of that tape and length (see sendPdf). Bin labels come from a separate call: { bins: "all" | "B1, B3-5" | ["B1", ...] [, only: "new"] }.
 // A page request whose cells also live in bins answers with X-Bins: the bins to fetch next (204 when there are only bins).
 app.post('/api/labels', async (req, res) => {
   const d = load(), all = allGroups(d);
@@ -295,7 +298,7 @@ app.post('/api/labels', async (req, res) => {
     const bins = binList(d, req.body.bins); if (!bins) return res.status(400).json({ error: 'bad bin list; use e.g. B1, B3-5, A2' });
     let labels = bins.map(b => binLabel(all, b)).filter(l => l._n > 0);
     if (req.body.only === 'new') { const pr = loadPrinted(); labels = labels.filter(l => pr[`bin|${l._bin}`] !== l._sig); }
-    return sendPdf(res, labels, 'bins-' + (req.body.bins === 'all' ? 'all' : labels.map(l => l._bin).join('_')), null, req.body.size);
+    return sendPdf(res, labels, 'bins-' + (req.body.bins === 'all' ? 'all' : labels.map(l => l._bin).join('_')), null, req.body.group);
   }
   let groups = [], name = 'all', bins = [];
   if (req.body.drawers) {
@@ -327,7 +330,7 @@ app.post('/api/labels', async (req, res) => {
   }
   const labels = groups.map(drawerLabel).filter(l => l._n > 0);
   if (!labels.length && bins.length) { res.setHeader('Access-Control-Expose-Headers', 'X-Bins'); res.setHeader('X-Bins', bins.join(',')); return res.status(204).end(); }
-  return sendPdf(res, labels, name, bins, req.body.size);
+  return sendPdf(res, labels, name, bins, req.body.group);
 });
 // POST /api/printed { page, keys: [...] | "all" } marks the labels those cells are on (every cell on them, from any page) and the
 // bins they touch as printed with their current text; { bins: [...] | "all" } marks bins
@@ -377,6 +380,14 @@ app.get('/api/cabinet', (req, res) => {
   }
   res.json({ cabinets, bins, unassigned, pages: d.pages.map(p => ({ id: p.id, title: p.title, cabinet: p.cabinet || '' })), page: req.query.page || '' });
 });
+// black -> fg, white -> bg, greys in between
+async function tint(png, fg, bg) {
+  const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), F = rgb(fg), B = rgb(bg);
+  const { data, info } = await sharp(png).flatten({ background: '#fff' }).greyscale().raw().toBuffer({ resolveWithObject: true });
+  const out = Buffer.alloc(info.width * info.height * 3);
+  for (let i = 0; i < info.width * info.height; i++) { const v = data[i] / 255; for (let c = 0; c < 3; c++) out[i * 3 + c] = Math.round(B[c] * v + F[c] * (1 - v)); }
+  return sharp(out, { raw: { width: info.width, height: info.height, channels: 3 } }).png().toBuffer();
+}
 // GET /api/preview.png?page=..&key=..[&slot=..]  -> a PNG of one label for the on-screen preview (the cell's primary location, or the slot given)
 app.get('/api/preview.png', async (req, res) => {
   const d = load(), page = d.pages.find(p => p.id === req.query.page); if (!page) return res.status(404).end();
@@ -386,7 +397,9 @@ app.get('/api/preview.png', async (req, res) => {
   let lab;
   if (pt.kind === 'bin') lab = binLabel(all, pt.bin);
   else { pt.page = page; lab = drawerLabel((slot && all.find(g => groupSlot(g) === slot)) || [pt]); }
-  res.setHeader('Content-Type', 'image/png'); res.send(await L.renderPng(L.labelSvg(lab.kind, lab)));
+  let png = await L.renderPng(L.labelSvg(lab.kind, lab));
+  if (!M.plainTape(lab._z)) png = await tint(png, lab._z.fg, lab._z.bg);   // the preview shows the tape; the PDF stays black on white, which is what the printer prints
+  res.setHeader('Content-Type', 'image/png'); res.send(png);
 });
 // Print relay. The page is served over https and the printer's PC sits behind NAT, so the page cannot call the helper and
 // neither can this server: the helper (helper/print-helper.py --server) polls here instead. The page POSTs a PDF to /api/print,
