@@ -343,9 +343,12 @@ function render() {
 }
 // rows: thread sizes. "#3-48", "1/4-28", "M6x0.75" (metric without a pitch gets the coarse pitch). Kept in diameter order, coarse before fine.
 const COARSE = { 1: 0.25, 1.2: 0.25, 1.4: 0.3, 1.6: 0.35, 1.8: 0.35, 2: 0.4, 2.5: 0.45, 3: 0.5, 3.5: 0.6, 4: 0.7, 5: 0.8, 6: 1, 7: 1, 8: 1.25, 10: 1.5, 12: 1.75, 14: 2, 16: 2, 18: 2.5, 20: 2.5 };
-function parseRow(text, units) {
+function parseRow(text, units, cls) {
   const t = text.trim().replace(/\s+/g, '');
-  if (units === 'mm') { const m = /^M(\d+(?:\.\d+)?)(?:[x×](\d+(?:\.\d+)?))?$/i.exec(t); if (!m) return null;
+  // thread-forming screws for plastic have no common size system: a row is the measured major diameter in mm ("2.5"), or a
+  // trade size when the packet gives one ("#4-20"), and the two can share a page
+  if (cls === 'plastic') { const m = /^(\d+(?:\.\d+)?)(?:mm)?$/i.exec(t); if (m && +m[1] > 0 && +m[1] <= 12) { const d = +m[1]; return { id: `${d}mm`, label: `${d}mm`, dia: `${d}mm`, pitch: 0 }; } if (/^M/i.test(t)) return null; }
+  else if (units === 'mm') { const m = /^M(\d+(?:\.\d+)?)(?:[x×](\d+(?:\.\d+)?))?$/i.exec(t); if (!m) return null;
     const d = +m[1], pitch = m[2] ? +m[2] : COARSE[d]; if (!pitch) return null;
     const label = `M${d}${m[2] ? '×' + pitch : ''}`; return { id: label.replace('×', 'x'), label, dia: `M${d}`, pitch }; }
   const m = /^#?(\d+|\d+\/\d+)(?:-(\d+))?$/.exec(t); if (!m) return null;
@@ -354,12 +357,13 @@ function parseRow(text, units) {
   const label = `${dia}-${m[2]}`; return { id: `${m[1]}-${m[2]}`, label, dia, pitch: +m[2] };
 }
 // nominal major diameter for the row header: ".164″" for #8, ".250″" for 1/4, "6 mm" stays as is for metric (with the inch equivalent)
-function diaText(dia) { const v = diaValue(dia); return dia.startsWith('M') ? `${+dia.slice(1)} mm · ${v.toFixed(3).replace(/^0/, '')}″` : `${v.toFixed(3).replace(/^0/, '')}″`; }
+function diaText(dia) { const v = diaValue(dia); if (dia.endsWith('mm')) return `${parseFloat(dia)} mm · ${v.toFixed(3).replace(/^0/, '')}″`; return dia.startsWith('M') ? `${+dia.slice(1)} mm · ${v.toFixed(3).replace(/^0/, '')}″` : `${v.toFixed(3).replace(/^0/, '')}″`; }
 function diaValue(dia) {   // major diameter in inches, for ordering
   if (dia.startsWith('#')) { const t = dia.slice(1); if (/^0+$/.test(t)) return 0.06 - 0.013 * (t.length - 1); return 0.06 + 0.013 * +t; }   // #0 = .060, #00 = .047, #000 = .034
+  if (dia.endsWith('mm')) return parseFloat(dia) / 25.4;   // a measured diameter (plastics page)
   if (dia.startsWith('M')) return +dia.slice(1) / 25.4; const [n, d] = dia.split('/'); return d ? n / d : +dia;
 }
-function rowKey(p, r) { return [diaValue(r.dia), p.units === 'mm' ? -r.pitch : r.pitch]; }   // metric: larger pitch (coarse) first; imperial: fewer threads (coarse) first
+function rowKey(p, r) { return [diaValue(r.dia), p.units === 'mm' && r.dia.startsWith('M') ? -r.pitch : r.pitch]; }   // metric: larger pitch (coarse) first; imperial: fewer threads (coarse) first
 function sortRows(p) { p.rows.sort((a, b) => { const [ka, pa] = rowKey(p, a), [kb, pb] = rowKey(p, b); return (ka - kb) || (pa - pb); }); }
 function rowKeys(p, r) {   // reading order within the row: lengths, then lock nut, nut, lock washer, washer (the server puts drawers first)
   const has = k => (p.cells[k]?.types || []).length;
@@ -367,8 +371,8 @@ function rowKeys(p, r) {   // reading order within the row: lengths, then lock n
 }
 function rowEmpty(p, r) { return !Object.keys(p.cells).some(k => k.startsWith(r.id + '|') && (p.cells[k].types || []).length); }
 $('#addRow').onclick = () => {
-  const p = page(); const v = prompt(p.units === 'mm' ? 'Thread size, e.g. M6 or M6x0.75' : 'Thread size, e.g. #3-48 or 1/4-28 (gauge only, e.g. #6, for wood and sheet metal screws)'); if (!v) return;
-  const r = parseRow(v, p.units); if (!r) return alert('Could not read that as a thread size');
+  const p = page(); const v = prompt(p.class === 'plastic' ? 'Size: the measured major diameter in mm, e.g. 2.5 (or a trade size such as #4-20 when you know it)' : p.units === 'mm' ? 'Thread size, e.g. M6 or M6x0.75' : 'Thread size, e.g. #3-48 or 1/4-28 (gauge only, e.g. #6, for wood and sheet metal screws)'); if (!v) return;
+  const r = parseRow(v, p.units, p.class); if (!r) return alert('Could not read that as a thread size');
   if (p.rows.some(x => x.id === r.id)) return alert('That row already exists');
   p.rows.push(r); sortRows(p); save(); render();
 };
@@ -497,12 +501,13 @@ const vParse = name => { const [shape, ...f] = String(name).split(':'); const w 
 const vKey = ({ shape, pointed = false, cutting = false, washers = [] }) => shape + (pointed ? ':p' : '') + (cutting ? ':c' : '') + (washers.length ? ':w' + ['k', 'f', 's', 'e', 'i'].filter(c => washers.includes(c)).join('') : '');
 const WHOLE = ['shoulder', 'setscrew'];   // shapes with no tip or washer options
 // the variant one click on a shape gives on this page: pointed on the wood and sheet metal pages, blunt on the machine pages
-const defVariant = (p, shape) => vKey({ shape, pointed: p.class !== 'machine' && !WHOLE.includes(shape) });
+const defVariant = (p, shape) => vKey({ shape, pointed: !['machine', 'plastic'].includes(p.class) && !WHOLE.includes(shape) });   // blunt on the machine and plastics pages
 const shapeOf = t => vParse(t).shape;
 // head shapes a class can have at all; a cell shows the page's primary shapes plus whatever else is ticked, and "…" offers the rest
 // every shape is available on every page through "…"; the order just puts the usual ones for that class first
 const HEAD_SHAPES = ['flat', 'oval', 'pan', 'button', 'round', 'truss', 'pancake', 'binding', 'cheese', 'fillister', 'socket', 'hex', 'hexwasher', 'flange', 'thumb', 'carriage', 'trim', 'shoulder', 'setscrew'];
 const HEAD_UNIVERSE = { machine: HEAD_SHAPES,
+                        plastic: ['pan', 'flat', 'button', 'truss', 'round', 'hexwasher', 'flange', ...HEAD_SHAPES.filter(x => !['pan', 'flat', 'button', 'truss', 'round', 'hexwasher', 'flange'].includes(x))],
                         tapping: ['flat', 'pan', 'button', 'truss', 'oval', 'hexwasher', 'flange', 'trim', ...HEAD_SHAPES.filter(x => !['flat', 'pan', 'button', 'truss', 'oval', 'hexwasher', 'flange', 'trim'].includes(x))],
                         wood: ['flat', 'trim', 'flange', 'pan', 'button', 'truss', 'oval', 'hexwasher', ...HEAD_SHAPES.filter(x => !['flat', 'trim', 'flange', 'pan', 'button', 'truss', 'oval', 'hexwasher'].includes(x))] };
 const universeOf = p => HEAD_UNIVERSE[p.class] || HEAD_UNIVERSE.machine;

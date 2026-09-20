@@ -60,6 +60,8 @@ records what has been printed.
   category each page belongs to; moving a page to another category leaves its stock where it is. A cabinet, a box of bins or
   the loose bins can also name the tape their part labels are printed on (say black on neon green): cards and previews are
   drawn in it, and each kind of tape prints as its own job, named in the "load the tape" prompt.
+- The **Plastic Thread-Forming Screws** page (class `plastic`) is for screws with no common size system: a row is the measured
+  major diameter in mm (add `2.5`), or a trade size when the packet gives one (`#4-20`); lengths are in mm; heads start blunt.
 - **Find** lists every screw, nut and washer by what it is rather than where it is: one line per kind (size, head, drive,
   material and finish) per place it is kept, so overflow stock has a line of its own. Chips filter by drive, finish, material,
   head, tip, page and where it is kept (alternatives within a group, all groups together: Torx + ceramic or cadmium), the
