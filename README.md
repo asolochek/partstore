@@ -60,6 +60,12 @@ records what has been printed.
   category each page belongs to; moving a page to another category leaves its stock where it is. A cabinet, a box of bins or
   the loose bins can also name the tape their part labels are printed on (say black on neon green): cards and previews are
   drawn in it, and each kind of tape prints as its own job, named in the "load the tape" prompt.
+- **Find** lists every screw, nut and washer by what it is rather than where it is: one line per kind (size, head, drive,
+  material and finish) per place it is kept, so overflow stock has a line of its own. Chips filter by drive, finish, material,
+  head, tip, page and where it is kept (alternatives within a group, all groups together: Torx + ceramic or cadmium), the
+  search box by size. Tick lines and **Move ticked to…**: a bin for each size in a box or among the loose bins (empty bins, in
+  order, previewed before anything is saved), or everything into one named place. Only the ticked kinds move; the rest of
+  their cells stay put. Undo takes a move back.
 - **Cabinet** opens the drawer map, all pages at once, with a tab per physical cabinet (the Unassigned list is the same on every tab), each drawer badged with its category colour and number: every label
   is a card in its drawer half, bin, or the Unassigned column on the right. Drag a card to a half, a bin, "drop here for a
   new bin", or back to Unassigned. Dropping on an occupied half offers **Merge** (both become one label) or **Insert**,
@@ -104,7 +110,7 @@ print one label each. Locations, bins, the cabinet map and PDF: drawers… work 
 ## Layout of the repo
 
 `server.js` Express app · `model.js` length series, cell keys, label text, locations and portions (also served to the page) · `icons.js` head, nut and
-washer icons · `static/index.html` the grid · `static/cabinet.html` the drawer map · `static/print.js` fetching and printing label PDFs, for both · `helper/` the Windows print helper ·
+washer icons · `static/index.html` the grid · `static/cabinet.html` the drawer map · `static/find.html` the filtered list and bulk move · `static/print.js` fetching and printing label PDFs, for both · `helper/` the Windows print helper ·
 `data/` the model.
 
 ## License

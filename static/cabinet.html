@@ -91,7 +91,8 @@ main { display:flex; gap:16px; padding:0 14px; flex:1; min-height:0; }
 <header><h1>Partstore cabinet</h1>
   <span class="tabs" id="tabs"></span>
   <button id="undo" disabled title="undo the last move or shift (⌘Z / Ctrl+Z)">Undo</button>
-  <button id="setupBtn" title="cabinets and how many drawers each category has">Cabinets…</button>
+  <button id="setupBtn" title="cabinets, categories, label sizes and colours">Cabinets…</button>
+  <button id="findBtn" title="list screws by drive, material, finish, head… and move the ticked ones">Find</button>
   <span id="status"></span>
   <span class="legend" id="cablegend"></span>
   <span class="legend"><span><i style="background:var(--none)"></i>empty</span><span><i style="background:var(--have)"></i>a label</span><span><i style="background:var(--bad);border-color:var(--bad2)"></i>lengths not contiguous</span><span>drag cards between halves, bins and the unassigned list · right-click a card or a half for more</span></span>
@@ -145,6 +146,7 @@ async function commit(what) {
 function snapshot() { undoStack.push(JSON.stringify(data)); if (undoStack.length > 30) undoStack.shift(); $('#undo').disabled = false; }
 async function undo() { if (!undoStack.length) return; const prev = JSON.parse(undoStack.pop()); prev.rev = data.rev; data = prev; $('#undo').disabled = !undoStack.length; await commit('undone'); }
 $('#undo').onclick = undo;
+$('#findBtn').onclick = () => window.open('find.html', '_blank');
 // ⌘Z / Ctrl+Z undoes the last move or shift (outside text fields)
 document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !/^(input|textarea|select)$/i.test(e.target.tagName)) { e.preventDefault(); undo(); } });
 

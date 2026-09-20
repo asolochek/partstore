@@ -147,6 +147,7 @@ table.list .drawer { white-space:nowrap; }
   <button id="markPrinted">Mark all printed</button>
   <button id="helperBtn" title="printer queues for direct printing">Printer…</button>
   <button type="button" id="cabinetBtn" title="drawer map for this page">Cabinet</button>
+  <button type="button" id="findBtn" title="list screws by drive, material, finish, head… and move the ticked ones">Find</button>
   <span id="status"></span>
 </header>
 <div class="legend" id="legend"></div>
@@ -680,6 +681,7 @@ function renderHelper() {
 }
 $('#helperBtn').onclick = () => { const t = $('#helper'); if (t.style.display === 'block') t.style.display = 'none'; else { renderHelper(); t.style.display = 'block'; } };
 $('#cabinetBtn').onclick = () => window.open(`cabinet.html?page=${encodeURIComponent(pageId)}`, '_blank');
+$('#findBtn').onclick = () => window.open('find.html', '_blank');
 $('#printAll').onclick = () => printKeys('all');
 $('#printDrawers').onclick = () => { const v = prompt(`Drawers to print: a list or ranges, R/F for one half of a divided drawer; bare numbers are the ${cabHint()}. e.g. 12-16, 20, 30R, M3-5`); if (v) printKeys(null, { drawers: v, page: pageId }); };
 $('#printBins').onclick = () => { const v = prompt('Bins to print: a list or ranges, or "all". e.g. B1, B3-5, A2-4'); if (v) printKeys(null, { bins: v.trim().toLowerCase() === 'all' ? 'all' : v }); };

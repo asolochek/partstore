@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="alternate icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Partstore Find</title>
+<!-- Copyright (C) 2026 Aaron Solochek. Licensed under the GNU GPL v3; see LICENSE. -->
+<style>
+:root { --paper:#f7f6f2; --ink:#17181a; --ink2:#5b6470; --line:#d9d7cf; --none:#e6e4de; --have:#ffffff; --accent:#d8641f; --bin:#2f6db5; }
+html, body { height:100%; }
+body { margin:0; background:var(--paper); color:var(--ink); font:14px/1.3 system-ui, sans-serif; display:flex; flex-direction:column; }
+header { display:flex; gap:12px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+h1 { font-size:16px; margin:0 8px 0 0; }
+button { font:inherit; padding:4px 10px; border:1px solid var(--line); border-radius:5px; background:#fff; cursor:pointer; }
+button:disabled { opacity:.45; cursor:default; }
+button.go { background:var(--accent); color:#fff; border-color:var(--accent); }
+#q { font:inherit; padding:4px 8px; border:1px solid var(--line); border-radius:5px; width:200px; }
+#status { color:var(--ink2); font-size:13px; }
+main { flex:1; display:flex; min-height:0; }
+/* facets: a column of groups; a value is a chip that toggles. Within a group the ticked values are alternatives, the groups all have to hold */
+#facets { width:250px; flex:none; overflow:auto; padding:10px 12px; border-right:1px solid var(--line); }
+#facets h3 { margin:12px 0 4px; font-size:11px; color:var(--ink2); text-transform:uppercase; letter-spacing:.04em; }
+#facets h3:first-child { margin-top:0; }
+.chip { display:inline-flex; gap:5px; align-items:center; margin:0 4px 4px 0; padding:2px 8px; border:1px solid var(--line); border-radius:11px; background:#fff; cursor:pointer; font-size:12.5px; user-select:none; }
+.chip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+.chip.zero { opacity:.4; }
+.chip i { font-style:normal; font-size:11px; opacity:.65; }
+#results { flex:1; overflow:auto; }
+table { border-collapse:collapse; width:100%; }
+th { position:sticky; top:0; background:var(--paper); text-align:left; font-size:11px; color:var(--ink2); text-transform:uppercase; letter-spacing:.04em; padding:8px 8px 6px; border-bottom:1px solid var(--line); z-index:1; }
+td { padding:4px 8px; border-bottom:1px solid var(--line); white-space:nowrap; vertical-align:middle; }
+tr.row { cursor:pointer; } tr.row:hover td { background:#fff; } tr.row.on td { background:#fff6ee; }
+tr.first td { border-top:2px solid var(--line); }   /* a new size starts */
+td.size { font-weight:600; }
+td svg { width:22px; height:22px; vertical-align:middle; margin-right:4px; }
+.badge { display:inline-block; padding:0 7px; border-radius:8px; font-size:11.5px; font-weight:600; }
+.none { color:var(--ink2); }
+.tag { font-size:11px; color:var(--ink2); margin-left:6px; }
+#bar { display:flex; gap:12px; align-items:center; padding:8px 14px; border-top:1px solid var(--line); background:#fff; }
+#dlg { position:fixed; inset:0; background:rgba(0,0,0,.25); display:none; align-items:center; justify-content:center; z-index:10; }
+#dlg .box { background:#fff; border-radius:8px; padding:16px 18px; box-shadow:0 8px 40px rgba(0,0,0,.25); max-width:min(640px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; box-sizing:border-box; }
+#dlg h2 { margin:0 0 10px; font-size:15px; }
+#dlg label { display:block; margin:8px 0 2px; cursor:pointer; }
+#dlg .sub { margin:2px 0 6px 24px; color:var(--ink2); font-size:13px; }
+#dlg input[type=text], #dlg input[type=number], #dlg select { font:inherit; padding:3px 6px; border:1px solid var(--line); border-radius:4px; }
+#dlg .plan { margin:10px 0 0; border:1px solid var(--line); border-radius:6px; max-height:38vh; overflow:auto; font-size:13px; }
+#dlg .plan div { display:flex; justify-content:space-between; gap:16px; padding:3px 10px; border-bottom:1px solid var(--line); }
+#dlg .plan div:last-child { border-bottom:0; }
+#dlg .err { color:#c0392b; margin-top:8px; font-size:13px; }
+#dlg .btns { display:flex; gap:8px; margin-top:14px; justify-content:flex-end; }
+@media (max-width: 760px) { main { flex-direction:column; } #facets { width:auto; max-height:34vh; border-right:0; border-bottom:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header><h1>Partstore find</h1>
+  <input id="q" type="search" placeholder="size, e.g. #8 or M3 × 10" autocomplete="off">
+  <button id="clear">Clear filters</button>
+  <button id="undo" disabled title="undo the last move">Undo</button>
+  <button id="toGrid">Grid</button><button id="toCab">Cabinet</button>
+  <span id="status"></span>
+</header>
+<main>
+  <div id="facets"></div>
+  <div id="results"><table><thead><tr><th><input type="checkbox" id="all" title="tick / untick everything listed"></th><th>Size</th><th>Head</th><th>Drive</th><th>Material</th><th>Where</th><th>Page</th></tr></thead><tbody id="rows"></tbody></table></div>
+</main>
+<div id="bar"><span id="count"></span><button id="move" class="go" disabled>Move ticked to…</button><button id="untick" disabled>Untick all</button><span class="none" id="hint">Each line is one kind of screw in one place; stock that is also kept somewhere else (overflow) has a line of its own, so it can move or stay.</span></div>
+<div id="dlg"><div class="box" id="dlgBox"></div></div>
+<script src="/model.js"></script>
+<script>
+// The Find page: every item of every page (size × length × head × drive × material), one line per place it is kept, filtered by
+// what it is rather than where it is, with ticks and a bulk move (M.relocate). Finding "Torx, ceramic or cadmium" and giving
+// those screws a box of their own is what it is for.
+const $ = s => document.querySelector(s);
+const status = t => { $('#status').textContent = t; };
+const esc = t => String(t ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+let data, icons = { svg: {}, labels: {} }, rows = [], shown = [], undoStack = [];
+const ticked = new Set(), picked = {};   // picked: facet -> Set of values
+M.bind(() => data);
+const DRIVE_NAME = { slotted: 'Slotted', phillips: 'Phillips', combo: 'Slotted + Phillips', pozidriv: 'Pozidriv', jis: 'JIS', torx: 'Torx', hex: 'Hex', square: 'Square' };
+const MAT_NAME = { steel: 'Steel', stainless: 'Stainless', aluminum: 'Aluminum', brass: 'Brass', nylon: 'Nylon', ptfe: 'PTFE', phenolic: 'Phenolic', pei: 'PEI', polycarbonate: 'Polycarbonate', plastic: 'Plastic', fiber: 'Fiber', copper: 'Copper', bronze: 'Bronze' };
+const FIN_NAME = { blackoxide: 'black oxide', brass: 'brass plated', bronze: 'bronze plated', cadmium: 'cadmium', chrome: 'chrome', nickel: 'nickel', galvanized: 'galvanized', zinc: 'zinc', zincyellow: 'zinc yellow chromate', tin: 'tin / TiN', ceramic: 'ceramic (exterior)', ticn: 'TiCN', anodized: 'anodized', tinzinc: 'tin zinc', gold: 'gold' };
+const NONE = '(not recorded)';
+// the facets, in display order: [id, title, row -> value or list of values]
+const FACETS = [
+  ['drive', 'Drive', r => r.drive ? (DRIVE_NAME[r.drive] || r.drive) : NONE],
+  ['finish', 'Finish', r => r.material ? (r.finish ? (FIN_NAME[r.finish] || r.finish) : 'plain') : NONE],
+  ['mat', 'Material', r => r.mat ? (MAT_NAME[r.mat] || r.mat) : NONE],
+  ['head', 'Head / kind', r => r.headName],
+  ['tip', 'Tip', r => r.tips],
+  ['page', 'Page', r => r.pageTitle],
+  ['where', 'Kept in', r => r.whereTags],
+];
+async function load() {
+  const [d, ic] = await Promise.all([fetch('/api/data').then(r => r.json()), fetch('/api/icons').then(r => r.json())]);
+  data = d; icons = ic; build(); render(); status('');
+}
+// the physical cabinet or box a location is in, by name
+function placeName(l) {
+  if (!l) return 'unassigned';
+  const P = M.positions(data);
+  if (l.kind === 'bin') { const b = P.bins.find(x => x.bin === l.bin); return b ? P.layout.cabinets[b.cabIx].title : 'loose bins'; }
+  const dr = P.drawers[M.positionOf(data, l.cabinet || M.CABINETS[0].id, l.drawer) - 1]; return dr ? P.layout.cabinets[dr.cabIx].title : 'drawer (no position)';
+}
+function build() {
+  rows = [];
+  data.pages.forEach((page, pageIx) => {
+    const rowIx = Object.fromEntries((page.rows || []).map((r, i) => [r.id, i]));
+    for (const key of M.populated(page)) for (const it of M.items(page, key)) {
+      const [a, b] = key.split('|'), v = String(it.type || '').split(':'), flags = v.slice(1), [mat, finish] = String(it.material || '').split('-');
+      const tips = M.isList(page) || !it.type ? [] : [flags.includes('p') ? 'pointed' : 'blunt', ...(flags.includes('c') ? ['cutting tip'] : []), ...(flags.some(f => f[0] === 'w') ? ['captive washer'] : [])];
+      const base = { pageId: page.id, pageTitle: page.title, key, type: it.type, drive: it.drive, material: it.material, mat, finish, tips, whole: it.whole,
+        size: M.cellText(page, key), headName: M.isList(page) ? 'list item' : (icons.labels[v[0]] || icons.labels[it.type] || v[0] || NONE),
+        order: [pageIx, rowIx[a] ?? 1e6, isNaN(+b) ? 1e6 : +b, String(b)] };
+      const places = [[it.loc, false], ...it.overflow.map(l => [l, M.slotOf(l)])];
+      for (const [loc, overflow] of places) rows.push({ ...base, loc, overflow, id: [page.id, key, it.type, it.drive, it.material, overflow || 'P'].join('\n'),
+        whereTags: [loc ? (loc.kind === 'bin' ? 'a bin' : 'a drawer') : 'unassigned', placeName(loc), ...(overflow ? ['overflow'] : []), ...(it.whole && loc?.kind === 'drawer' ? ['needs a whole drawer'] : [])] });
+    }
+  });
+  rows.sort((x, y) => { for (let i = 0; i < 3; i++) if (x.order[i] !== y.order[i]) return x.order[i] - y.order[i]; return x.order[3].localeCompare(y.order[3]) || (x.overflow ? 1 : 0) - (y.overflow ? 1 : 0); });
+  const ids = new Set(rows.map(r => r.id)); for (const id of [...ticked]) if (!ids.has(id)) ticked.delete(id);
+}
+const valuesOf = (f, r) => [].concat(f[2](r));
+const passes = (r, except) => FACETS.every(f => f[0] === except || !picked[f[0]]?.size || valuesOf(f, r).some(v => picked[f[0]].has(v)));
+function render() {
+  const words = $('#q').value.toLowerCase().split(/\s+/).filter(Boolean), text = r => `${r.size} ${r.headName} ${r.pageTitle}`.toLowerCase().replace(/[×x]/g, ' ');
+  const hit = r => words.every(w => text(r).includes(w.replace(/[×x]/g, '')) || text(r).includes(w));
+  const searched = rows.filter(hit);
+  // a facet's counts are what ticking that value would list, given the other facets
+  $('#facets').innerHTML = FACETS.map(f => {
+    const counts = {}; for (const r of searched) if (passes(r, f[0])) for (const v of valuesOf(f, r)) counts[v] = (counts[v] || 0) + 1;
+    const all = new Set(rows.flatMap(r => valuesOf(f, r))), vals = [...all].sort((a, b) => (a === NONE) - (b === NONE) || a.localeCompare(b));
+    return `<h3>${f[1]}</h3>` + vals.map(v => `<span class="chip${picked[f[0]]?.has(v) ? ' on' : ''}${counts[v] ? '' : ' zero'}" data-f="${f[0]}" data-v="${esc(v)}">${esc(v)} <i>${counts[v] || 0}</i></span>`).join('');
+  }).join('');
+  $('#facets').querySelectorAll('.chip').forEach(c => c.onclick = () => { const s = picked[c.dataset.f] = picked[c.dataset.f] || new Set(); s.has(c.dataset.v) ? s.delete(c.dataset.v) : s.add(c.dataset.v); render(); });
+  shown = searched.filter(r => passes(r));
+  let last = '';
+  $('#rows').innerHTML = shown.map(r => { const first = r.pageId + r.key !== last; last = r.pageId + r.key;
+    const drive = r.drive ? (DRIVE_NAME[r.drive] || r.drive) : '', mat = r.material ? [MAT_NAME[r.mat] || r.mat, r.finish ? (FIN_NAME[r.finish] || r.finish) : ''].filter(Boolean).join(', ') : '';
+    return `<tr class="row${ticked.has(r.id) ? ' on' : ''}${first ? ' first' : ''}" data-id="${esc(r.id)}"><td><input type="checkbox" ${ticked.has(r.id) ? 'checked' : ''}></td><td class="size">${esc(r.size)}</td>` +
+      `<td>${icons.svg[r.type] || ''}${esc(r.headName)}${r.tips.filter(t => t !== 'blunt' && t !== 'pointed').map(t => `<span class="tag">${t}</span>`).join('')}</td><td>${esc(drive) || '<span class="none">–</span>'}</td><td>${esc(mat) || '<span class="none">–</span>'}</td>` +
+      `<td>${whereBadge(r)}${r.overflow ? '<span class="tag">overflow</span>' : ''}${r.whole && r.loc?.kind === 'drawer' ? '<span class="tag">whole drawer</span>' : ''}</td><td class="none">${esc(r.pageTitle)}</td></tr>`; }).join('') ||
+    `<tr><td colspan="7" class="none" style="padding:24px">Nothing matches.</td></tr>`;
+  $('#rows').querySelectorAll('tr.row').forEach(tr => tr.onclick = () => { const id = tr.dataset.id; ticked.has(id) ? ticked.delete(id) : ticked.add(id); tr.classList.toggle('on', ticked.has(id)); tr.querySelector('input').checked = ticked.has(id); bar(); });
+  bar();
+}
+// a place, drawn as on the other pages: a drawer in its category's colours, a bin in its box's tape colours (or the usual blue)
+function whereBadge(r) {
+  const l = r.loc; if (!l) return '<span class="none">unassigned</span>';
+  let bg = '#2f6db5', fg = '#ffffff';
+  if (l.kind === 'drawer') { const c = M.cabinetById(l.cabinet); if (c) { bg = c.color; fg = c.fg; } } else { const z = M.labelSpec(data, l); if (!M.plainTape(z)) { bg = z.bg; fg = z.fg; } }
+  return `<span class="badge" style="background:${bg};color:${fg}">${esc(M.locText(l, ''))}</span> <span class="none">${esc(placeName(l))}</span>`;
+}
+function bar() {
+  const n = ticked.size, vis = shown.filter(r => ticked.has(r.id)).length;
+  $('#count').textContent = `${shown.length} of ${rows.length} listed · ${n} ticked${n !== vis ? ` (${n - vis} not in this list)` : ''}`;
+  $('#move').disabled = $('#untick').disabled = !n; $('#all').checked = shown.length > 0 && vis === shown.length; $('#all').indeterminate = vis > 0 && vis < shown.length;
+}
+$('#all').onclick = () => { const on = $('#all').checked; for (const r of shown) on ? ticked.add(r.id) : ticked.delete(r.id); render(); };
+$('#untick').onclick = () => { ticked.clear(); render(); };
+$('#clear').onclick = () => { for (const k of Object.keys(picked)) delete picked[k]; $('#q').value = ''; render(); };
+$('#q').oninput = render;
+$('#toGrid').onclick = () => { location.href = '/'; }; $('#toCab').onclick = () => { location.href = '/cabinet.html'; };
+
+// ---- the move ----
+// every place with stock in it now, as slots
+const occupied = () => new Set(rows.filter(r => r.loc).map(r => M.slotOf(r.loc)));
+// the boxes and the loose bins, as targets for "a bin each"
+function boxes() {
+  const P = M.positions(data), out = [];
+  P.layout.cabinets.forEach((c, i) => { if (M.KINDS[c.kind]?.bins) out.push({ id: c.id, title: `${c.title} (${M.boxPrefix(P.layout, i)}1–${M.boxPrefix(P.layout, i)}${M.KINDS[c.kind].bins})`, bins: P.bins.filter(b => b.cabIx === i).map(b => b.bin) }); });
+  const inBox = new Set(P.bins.map(b => b.bin)), loose = rows.filter(r => r.loc?.kind === 'bin' && !inBox.has(r.loc.bin)).map(r => parseInt(r.loc.bin.slice(1)) || 0);
+  out.push({ id: '', title: 'Loose bins (B…)', bins: Array.from({ length: 400 }, (_, i) => `B${i + 1}`), from: Math.max(0, ...loose) + 1 });
+  return out;
+}
+function openMove() {
+  const sel = rows.filter(r => ticked.has(r.id)); if (!sel.length) return;
+  // screws of one size (one cell of one page) share a bin; different sizes never do unless everything goes to one place
+  const groups = []; for (const r of sel) { let g = groups.find(g => g.pageId === r.pageId && g.key === r.key); if (!g) groups.push(g = { pageId: r.pageId, key: r.key, size: r.size, page: r.pageTitle, rows: [] }); g.rows.push(r); }
+  const B = boxes();
+  $('#dlgBox').innerHTML = `<h2>Move ${sel.length} line${sel.length === 1 ? '' : 's'} (${groups.length} size${groups.length === 1 ? '' : 's'})</h2>
+    <label><input type="radio" name="how" value="each" checked> A bin for each size, in <select id="mBox">${B.map((b, i) => `<option value="${i}">${esc(b.title)}</option>`).join('')}</select> from bin number <input type="number" id="mFrom" min="1" style="width:64px" placeholder="first free"></label>
+    <div class="sub">Empty bins are used in order; a size's ticked lines go into its bin together.</div>
+    <label><input type="radio" name="how" value="one"> Everything into one place: <input type="text" id="mOne" placeholder="e.g. C4, B20 or W12R" style="width:150px"></label>
+    <div class="sub">A bin, or a drawer with its category letter. Whatever is already there stays, and they share a label.</div>
+    <div class="plan" id="mPlan"></div><div class="err" id="mErr"></div>
+    <div class="btns"><button id="mCancel">Cancel</button><button id="mGo" class="go">Move</button></div>`;
+  let plan = null;
+  const recompute = () => {
+    const how = document.querySelector('input[name=how]:checked').value; let err = ''; plan = [];
+    if (how === 'one') {
+      const l = M.parseLoc($('#mOne').value);
+      if (!l) err = $('#mOne').value.trim() ? 'That is not a place I understand. Use a bin (C4, B20) or a drawer with its category letter (W12R).' : 'Say where.';
+      else if (l.kind === 'drawer' && !l.cabinet) err = `A drawer needs its category letter here (${M.CABINETS.map(c => c.prefix).join(', ')}), e.g. ${M.CABINETS[0].prefix}${l.drawer}.`;
+      else plan = groups.map(g => ({ g, to: l }));
+    } else {
+      const b = B[+$('#mBox').value], taken = occupied(), from = +$('#mFrom').value || b.from || 1;
+      const free = b.bins.filter(id => (parseInt(id.slice(1)) || 0) >= from && !taken.has(`B:${id}`));
+      if (free.length < groups.length) err = `${groups.length} sizes need ${groups.length} empty bins, and ${esc(b.title)} has ${free.length} from number ${from}.`;
+      else plan = groups.map((g, i) => ({ g, to: { kind: 'bin', bin: free[i] } }));
+    }
+    $('#mErr').textContent = err; $('#mGo').disabled = !!err;
+    $('#mPlan').innerHTML = plan.map(p => `<div><span><b>${esc(p.g.size)}</b> <span class="none">${esc(p.g.page)} · ${p.g.rows.length} line${p.g.rows.length === 1 ? '' : 's'}</span></span><span>→ ${esc(M.locText(p.to, ''))}</span></div>`).join('');
+  };
+  $('#dlgBox').querySelectorAll('input, select').forEach(x => x.oninput = x.onchange = recompute);
+  $('#mOne').onfocus = () => { document.querySelector('input[name=how][value=one]').checked = true; recompute(); };
+  $('#mCancel').onclick = () => { $('#dlg').style.display = 'none'; };
+  $('#mGo').onclick = async () => {
+    const moves = plan.flatMap(p => p.g.rows.map(r => ({ pageId: r.pageId, key: r.key, type: r.type, drive: r.drive, material: r.material, overflow: r.overflow, to: p.to })));
+    const before = JSON.stringify(data); M.relocate(data, moves);
+    $('#dlg').style.display = 'none';
+    if (await save(`${moves.length} line${moves.length === 1 ? '' : 's'} moved; the labels that changed are under “PDF: unprinted” on the grid`)) { undoStack.push(before); if (undoStack.length > 30) undoStack.shift(); $('#undo').disabled = false; ticked.clear(); build(); render(); }
+  };
+  recompute(); $('#dlg').style.display = 'flex';
+}
+$('#move').onclick = openMove;
+$('#dlg').onclick = e => { if (e.target === $('#dlg')) $('#dlg').style.display = 'none'; };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#dlg').style.display = 'none'; });
+async function save(what) {
+  status('saving…');
+  const r = await fetch('/api/data', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  if (r.status === 409) { undoStack.length = 0; $('#undo').disabled = true; alert('The data changed elsewhere; reloading. Please redo that move.'); await load(); return false; }
+  if (!r.ok) { status('save failed'); alert('Save failed'); await load(); return false; }
+  data.rev = (await r.json()).rev; status(what); return true;
+}
+$('#undo').onclick = async () => { if (!undoStack.length) return; const prev = JSON.parse(undoStack.pop()); prev.rev = data.rev; data = prev; $('#undo').disabled = !undoStack.length; if (await save('undone')) { build(); render(); } };
+// another page saved: pick it up
+let events;
+function listen() {
+  try { events = new EventSource('/api/events'); } catch (e) { return; }
+  events.onmessage = e => { if (data && +e.data !== data.rev) load(); };
+  events.onerror = () => { events.close(); setTimeout(listen, 5000); };
+}
+load().then(listen);
+</script>
+</body>
+</html>

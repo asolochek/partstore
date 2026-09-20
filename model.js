@@ -199,6 +199,43 @@ function portions(page, keys) {
   }
   return out;
 }
+// ---- moving single items (the Find page) ----
+// relocate(d, moves): each move = { pageId, key, type, drive, material, overflow: false | the slot of the overflow location that
+// moves, to: location | null }. An item's primary location and each of its overflow locations move separately. The item's
+// locations are written out at its own level (so the rest of its cell stays put, and it keeps the overflow it inherited unless
+// that moved too); a cell whose items then all agree again is folded back to one location on the cell. Returns the cells touched.
+function relocate(d, moves) {
+  const byItem = new Map(), touched = new Map();
+  for (const m of moves) { const k = [m.pageId, m.key, m.type, m.drive, m.material].join('\n'); if (!byItem.has(k)) byItem.set(k, []); byItem.get(k).push(m); }
+  for (const ms of byItem.values()) {
+    const m0 = ms[0], page = d.pages.find(p => p.id === m0.pageId); if (!page) continue;
+    const eff = items(page, m0.key).find(it => it.type === m0.type && it.drive === m0.drive && it.material === m0.material); if (!eff) continue;
+    let prim = eff.loc, over = [...eff.overflow];
+    for (const m of ms) { const to = m.to ? inCabinet(page, m.to) : null; if (m.overflow === false || m.overflow == null) prim = to; else over = over.map(l => slotOf(l) === m.overflow ? to : l).filter(Boolean); }
+    const seen = new Set(prim ? [slotOf(prim)] : []); over = over.filter(l => !seen.has(slotOf(l)) && seen.add(slotOf(l)));   // overflow that joined the primary, or another overflow, is just that place
+    const store = l => { const x = { ...l }; if (x.kind === 'drawer' && x.cabinet === (page.cabinet || '')) delete x.cabinet; if (x.kind === 'drawer' && !x.half) delete x.half; return x; };
+    let o;
+    if (isList(page)) o = listItem(page, m0.key);
+    else { const c = page.cells[m0.key]; c.detail = c.detail || {}; const t = c.detail[m0.type] = c.detail[m0.type] || {}; t.items = t.items || {}; o = t.items[`${m0.drive}|${m0.material}`] = t.items[`${m0.drive}|${m0.material}`] || {}; }
+    delete o.drawer; delete o.half;
+    if (prim) o.loc = store(prim); else delete o.loc;
+    if (over.length) o.overflow = over.map(store); else delete o.overflow;
+    touched.set(m0.pageId + '\n' + m0.key, [page, m0.key]);
+  }
+  for (const [page, key] of touched.values()) foldCell(page, key);
+  return [...touched.values()].map(([page, key]) => ({ pageId: page.id, key }));
+}
+// when every item of a cell is in the same places, say so once, on the cell
+function foldCell(page, key) {
+  if (isList(page)) return;
+  const c = page.cells[key], its = items(page, key); if (!c || !its.length) return;
+  const sig = it => slotOf(it.loc) + ' + ' + it.overflow.map(slotOf).join(',');
+  if (its.some(it => sig(it) !== sig(its[0]))) return;
+  const store = l => { const x = { ...l }; if (x.kind === 'drawer' && x.cabinet === (page.cabinet || '')) delete x.cabinet; if (x.kind === 'drawer' && !x.half) delete x.half; return x; };
+  const strip = o => { delete o.loc; delete o.overflow; delete o.drawer; delete o.half; };
+  for (const t of Object.values(c.detail || {})) { strip(t); for (const [ik, it] of Object.entries(t.items || {})) { strip(it); if (!Object.keys(it).length) delete t.items[ik]; } if (t.items && !Object.keys(t.items).length) delete t.items; }
+  strip(c); if (its[0].loc) c.loc = store(its[0].loc); if (its[0].overflow.length) c.overflow = its[0].overflow.map(store);
+}
 const portionSlot = p => p.kind === 'bin' ? `B:${p.bin}` : p.kind === 'drawer' ? `D:${p.cabinet || ''}:${p.drawer}|${p.half || ''}` : '';
 // location text: "12", "12R", "12F" for drawers, "B3" for bins, with the cabinet prefix when the drawer is in a cabinet other
 // than `home` (a page's own cabinet); parseLoc reads the same (plus "12 rear", "bin 3", "b3", "M12R")
@@ -236,6 +273,6 @@ function drawerOrder(page, groups) {
   const key = g => { const c = g[0]; return c.kind === 'drawer' ? [0, cabIx(c.cabinet), +c.drawer, c.half === 'front' ? 1 : 0] : c.kind === 'bin' ? [1, 0, 0, 0] : [2, 0, 0, 0]; };
   return groups.map((g, i) => [g, key(g), i]).sort((a, b) => (a[1][0] - b[1][0]) || (a[1][1] - b[1][1]) || (a[1][2] - b[1][2]) || (a[1][3] - b[1][3]) || (a[2] - b[2])).map(x => x[0]);
 }
-const api = { bind, categoriesOf, recategorize, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
+const api = { bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
 if (typeof module !== 'undefined') module.exports = api; else window.M = api;   // the same file is served to the browser
 })();
