@@ -13,14 +13,14 @@ const HEAD = { border: `fill="none" stroke="${K}" stroke-width="${SW}" stroke-li
 const SHAPES = {
   flat:     { base: 44, svg: `<path d="M20 22 H80 L62 44 H38 Z" ${HEAD.border}/><line x1="50" y1="22" x2="50" y2="34" stroke="${K}" stroke-width="3.5"/>` },
   oval:     { base: 48, svg: `<path d="M20 30 Q50 8 80 30 L62 48 H38 Z" ${HEAD.border}/><line x1="50" y1="24" x2="50" y2="38" stroke="${K}" stroke-width="3.5"/>` },
-  // rounded heads, profiles after the usual supplier chart: pan = low with a flattish top and short sides; button = low dome;
-  // round = a half-circle dome; truss = very wide, very low; cheese = tall cylinder; fillister = cylinder with a domed top;
+  // rounded heads, profiles after the usual supplier chart: pan = low with a flattish top and short sides; button = a half-circle dome;
+  // round = a taller dome on short straight sides; truss = very wide, very low; cheese = tall and flat-topped, tapering slightly to the top; fillister = cylinder with a domed top;
   // binding = short cylinder with a domed top and a small undercut lip; pancake = a very thin wide disc
   pan:      { base: 44, svg: `<path d="M22 44 V36 Q22 28 30 26 Q50 20 70 26 Q78 28 78 36 V44 Z" ${HEAD.border}/><line x1="38" y1="29" x2="62" y2="29" stroke="${K}" stroke-width="3.5"/>` },
-  button:   { base: 44, svg: `<path d="M22 44 V30 Q22 16 36 16 H64 Q78 16 78 30 V44 Z" ${HEAD.border}/>` },
-  round:    { base: 44, svg: `<path d="M24 44 A26 26 0 0 1 76 44 Z" ${HEAD.border}/>` },
+  button:   { base: 44, svg: `<path d="M24 44 A26 26 0 0 1 76 44 Z" ${HEAD.border}/>` },
+  round:    { base: 44, svg: `<path d="M25 44 V38 Q25 10 50 10 Q75 10 75 38 V44 Z" ${HEAD.border}/>` },
   truss:    { base: 44, svg: `<path d="M12 44 V40 Q12 26 50 24 Q88 26 88 40 V44 Z" ${HEAD.border}/>` },
-  cheese:   { base: 44, svg: `<path d="M30 44 V20 Q30 14 36 14 H64 Q70 14 70 20 V44 Z" ${HEAD.border}/><line x1="50" y1="14" x2="50" y2="28" stroke="${K}" stroke-width="3.5"/>` },
+  cheese:   { base: 44, svg: `<path d="M27 44 L32 17 Q32.5 14 36 14 H64 Q67.5 14 68 17 L73 44 Z" ${HEAD.border}/><line x1="50" y1="14" x2="50" y2="28" stroke="${K}" stroke-width="3.5"/>` },
   fillister:{ base: 44, svg: `<path d="M30 44 V26 Q30 12 50 12 Q70 12 70 26 V44 Z" ${HEAD.border}/><line x1="50" y1="14" x2="50" y2="28" stroke="${K}" stroke-width="3.5"/>` },
   binding:  { base: 44, svg: `<path d="M28 44 V40 H26 V30 Q26 18 40 18 H60 Q74 18 74 30 V40 H72 V44 Z" ${HEAD.border}/><line x1="50" y1="18" x2="50" y2="30" stroke="${K}" stroke-width="3.5"/>` },
   pancake:  { base: 44, svg: `<path d="M12 44 V38 Q12 32 18 32 H82 Q88 32 88 38 V44 Z" ${HEAD.border}/>` },
