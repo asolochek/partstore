@@ -108,7 +108,7 @@ function build() {
     const rowIx = Object.fromEntries((page.rows || []).map((r, i) => [r.id, i]));
     for (const key of M.populated(page)) for (const it of M.items(page, key)) {
       const [a, b] = key.split('|'), v = String(it.type || '').split(':'), flags = v.slice(1), [mat, finish] = String(it.material || '').split('-');
-      const tips = M.isList(page) || !it.type ? [] : [flags.includes('p') ? 'pointed' : 'blunt', ...(flags.includes('c') ? ['cutting tip'] : []), ...(flags.some(f => f[0] === 'w') ? ['captive washer'] : [])];
+      const tips = M.isList(page) || !it.type ? [] : [...(flags.includes('d') ? ['self-drilling'] : [flags.includes('p') ? 'pointed' : 'blunt', ...(flags.includes('c') ? ['thread-cutting'] : [])]), ...(flags.some(f => f[0] === 'w') ? ['captive washer'] : [])];
       const base = { pageId: page.id, pageTitle: page.title, key, type: it.type, drive: it.drive, material: it.material, mat, finish, tips, whole: it.whole,
         size: M.cellText(page, key), headName: M.isList(page) ? 'list item' : (icons.labels[v[0]] || icons.labels[it.type] || v[0] || NONE),
         order: [pageIx, rowIx[a] ?? 1e6, isNaN(+b) ? 1e6 : +b, String(b)] };

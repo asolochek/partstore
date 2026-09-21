@@ -495,12 +495,16 @@ function printCell(key, x, y) {
   $('#popClose').onclick = closePop; placePop(x, y);
 }
 const printKeys = (keys, body) => printLabels(body || { page: pageId, keys }, keys === 'new');
-// screws are a head shape plus properties: tip (blunt / pointed), cutting tip (thread-forming or self-drilling) and captive
+// screws are a head shape plus properties: tip (blunt / pointed / self-drilling), a thread-cutting notch on a blunt or pointed tip, and captive
 // washers. A variant key names the combination ("pan", "pan:p", "pan:p:c", "pan:wfs"); the cell's types list holds variant keys.
-const vParse = name => { const [shape, ...f] = String(name).split(':'); const w = f.find(x => x[0] === 'w') || ''; return { shape, pointed: f.includes('p'), cutting: f.includes('c'), washers: [...w.slice(1)] }; };
-const vKey = ({ shape, pointed = false, cutting = false, washers = [] }) => shape + (pointed ? ':p' : '') + (cutting ? ':c' : '') + (washers.length ? ':w' + ['k', 'f', 's', 'e', 'i'].filter(c => washers.includes(c)).join('') : '');
+const vParse = name => { const [shape, ...f] = String(name).split(':'); const w = f.find(x => x[0] === 'w') || '', drill = f.includes('d'); return { shape, drill, pointed: !drill && f.includes('p'), cutting: !drill && f.includes('c'), washers: [...w.slice(1)] }; };
+const vKey = ({ shape, pointed = false, cutting = false, drill = false, washers = [] }) => shape + (drill ? ':d' : (pointed ? ':p' : '') + (cutting ? ':c' : '')) + (washers.length ? ':w' + ['k', 'f', 's', 'e', 'i'].filter(c => washers.includes(c)).join('') : '');
 const WHOLE = ['shoulder', 'setscrew'];   // shapes with no tip or washer options
 // the variant one click on a shape gives on this page: pointed on the wood and sheet metal pages, blunt on the machine pages
+// the tip of a head, in the detail and "another variant" panels: one of three tips, and a thread-cutting notch that a drill point cannot have
+const tipChoice = (name, cutId, v) => [['blunt', 'Blunt'], ['pointed', 'Pointed'], ['drill', 'Self-drilling (drill point)']].map(([val, l]) => `<label><input type="radio" name="${name}" value="${val}" ${(v.drill ? 'drill' : v.pointed ? 'pointed' : 'blunt') === val ? 'checked' : ''} onchange="document.getElementById('${cutId}').disabled = this.value === 'drill'">${l}</label>`).join('') +
+  `<label><input type="checkbox" id="${cutId}" ${v.cutting ? 'checked' : ''} ${v.drill ? 'disabled' : ''}>Thread-cutting (a notch or slot up the tip)</label>`;
+const tipRead = (name, cutId) => { const t = $(`#pop input[name=${name}]:checked`)?.value; return { drill: t === 'drill', pointed: t === 'pointed', cutting: t !== 'drill' && !!$('#' + cutId)?.checked }; };
 const defVariant = (p, shape) => vKey({ shape, pointed: !['machine', 'plastic'].includes(p.class) && !WHOLE.includes(shape) });   // blunt on the machine and plastics pages
 const shapeOf = t => vParse(t).shape;
 // head shapes a class can have at all; a cell shows the page's primary shapes plus whatever else is ticked, and "…" offers the rest
@@ -520,7 +524,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); 
 document.addEventListener('pointerdown', e => { const pop = $('#pop'); if (pop.style.display === 'block' && !pop.contains(e.target)) closePop(); }, true);
 function openMore(key, universe, x, y) {
   const c = cell(key), p = page();
-  $('#pop').innerHTML = `<h3>Head shapes · ${cellTextClient(p, key)}</h3><div class="note">Tip, cutting tip and captive washers are set per head: right-click its icon.</div>` + universe.map(sh => { const t = defVariant(p, sh); return `<label><input type="checkbox" data-t="${t}" ${c.types.includes(t) ? 'checked' : ''}>${iconSvg(t)}${iconLabel(t)}</label>`; }).join('') + `<div class="row"><button type="button" id="popClose">Close</button></div>`;
+  $('#pop').innerHTML = `<h3>Head shapes · ${cellTextClient(p, key)}</h3><div class="note">Tip (blunt, pointed, self-drilling; thread-cutting) and captive washers are set per head: right-click its icon.</div>` + universe.map(sh => { const t = defVariant(p, sh); return `<label><input type="checkbox" data-t="${t}" ${c.types.includes(t) ? 'checked' : ''}>${iconSvg(t)}${iconLabel(t)}</label>`; }).join('') + `<div class="row"><button type="button" id="popClose">Close</button></div>`;
   $('#pop').querySelectorAll('input').forEach(i => i.onchange = () => { toggle(key, i.dataset.t); });
   $('#popClose').onclick = closePop; placePop(x, y);
 }
@@ -563,8 +567,7 @@ function openDetail(key, type, x, y) {
   const itemOf = (d, m) => ((info.items || {})[`${d}|${m}`] || {});
   let h = `<h3>${iconSvg(type)} ${iconLabel(type)} · ${cellTextClient(p, key)}</h3>`;
   if (isHead && !WHOLE.includes(v.shape)) {
-    h += `<h4>Tip</h4><label><input type="radio" name="tip" value="blunt" ${!v.pointed ? 'checked' : ''}>Blunt</label><label><input type="radio" name="tip" value="pointed" ${v.pointed ? 'checked' : ''}>Pointed</label>
-      <label><input type="checkbox" id="popCut" ${v.cutting ? 'checked' : ''}>Cutting tip (${v.pointed ? 'self-drilling' : 'thread-forming'})</label>
+    h += `<h4>Tip</h4>${tipChoice('tip', 'popCut', v)}
       <h4>Captive washer</h4>` + [['k', 'Countersunk (finishing cup)'], ['f', 'Flat'], ['s', 'Split lock'], ['e', 'External tooth'], ['i', 'Internal tooth']].map(([c, l]) => `<label><input type="checkbox" class="popW" value="${c}" ${v.washers.includes(c) ? 'checked' : ''}>${l}</label>`).join('') +
       `<div class="note">Changing these converts this head. <button type="button" id="popVar" class="varbtn">Add another variant…</button> keeps it and adds a second one (same drives and materials) with a different tip or washers. A different drive, material or finish is just another tick below.</div>`;
   }
@@ -584,7 +587,7 @@ function openDetail(key, type, x, y) {
   const here = () => openDetail(key, type, parseInt($('#pop').style.left), parseInt($('#pop').style.top));
   // tip / cutting / washers rename the variant: its detail moves with it; a variant that already exists in the cell is refused
   const revariant = () => {
-    const nv = { shape: v.shape, pointed: $('#pop input[name=tip]:checked')?.value === 'pointed', cutting: $('#popCut')?.checked, washers: [...$('#pop').querySelectorAll('.popW:checked')].map(i => i.value) };
+    const nv = { shape: v.shape, ...tipRead('tip', 'popCut'), washers: [...$('#pop').querySelectorAll('.popW:checked')].map(i => i.value) };
     const nk = vKey(nv); if (nk === type) return;
     if (c.types.includes(nk)) { alert(`${iconLabel(nk)} is already in this cell.`); return here(); }
     c.types[c.types.indexOf(type)] = nk; c.detail[nk] = info; delete c.detail[type];
@@ -618,12 +621,11 @@ function openDetail(key, type, x, y) {
 function openVariant(key, type, x, y) {
   const c = cell(key), v = vParse(type), src = (c.detail || {})[type] || {};
   $('#pop').innerHTML = `<h3>${iconSvg(type)} Another variant of ${iconLabel(v.shape)} · ${cellTextClient(page(), key)}</h3>
-    <h4>Tip</h4><label><input type="radio" name="vtip" value="blunt" ${!v.pointed ? 'checked' : ''}>Blunt</label><label><input type="radio" name="vtip" value="pointed" ${v.pointed ? 'checked' : ''}>Pointed</label>
-    <label><input type="checkbox" id="vCut" ${v.cutting ? 'checked' : ''}>Cutting tip</label>
+    <h4>Tip</h4>${tipChoice('vtip', 'vCut', v)}
     <h4>Captive washer</h4>` + [['k', 'Countersunk (finishing cup)'], ['f', 'Flat'], ['s', 'Split lock'], ['e', 'External tooth'], ['i', 'Internal tooth']].map(([cd, l]) => `<label><input type="checkbox" class="vW" value="${cd}" ${v.washers.includes(cd) ? 'checked' : ''}>${l}</label>`).join('') +
     `<div class="row"><button type="button" id="popGo">Add</button><button type="button" id="popClose">Cancel</button></div>`;
   $('#popGo').onclick = () => {
-    const nk = vKey({ shape: v.shape, pointed: $('#pop input[name=vtip]:checked')?.value === 'pointed', cutting: $('#vCut').checked, washers: [...$('#pop').querySelectorAll('.vW:checked')].map(i => i.value) });
+    const nk = vKey({ shape: v.shape, ...tipRead('vtip', 'vCut'), washers: [...$('#pop').querySelectorAll('.vW:checked')].map(i => i.value) });
     if (c.types.includes(nk)) return alert(`${iconLabel(nk)} is already in this cell.`);
     c.types.push(nk); c.detail = c.detail || {};
     c.detail[nk] = { ...(src.drives ? { drives: JSON.parse(JSON.stringify(src.drives)) } : {}), ...(src.materials ? { materials: [...src.materials] } : {}) };

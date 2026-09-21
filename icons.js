@@ -4,9 +4,10 @@
 const K = '#000', SW = 5;
 const shank = (x, y0, y1) => `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y1}" stroke="${K}" stroke-width="${SW * 2.2}" stroke-linecap="butt"/>`;
 const threads = (x, y0, y1) => { let g = ''; for (let y = y0 + 6; y < y1 - 2; y += 8) g += `<line x1="${x - 9}" y1="${y}" x2="${x + 9}" y2="${y + 3}" stroke="${K}" stroke-width="2.5"/>`; return g; };
-// ---- screws are composed: a head shape, then captive washers under it, then a shank whose tip is blunt or pointed and
-// cutting (thread-forming / self-drilling) or not. A variant key names the combination: "pan", "pan:p" (pointed),
-// "pan:p:c" (pointed, cutting = self-drilling), "pan:c" (blunt, cutting = thread-forming), "pan:wfs" (flat + split washers).
+// ---- screws are composed: a head shape, then captive washers under it, then a shank whose tip is blunt, pointed or a drill
+// point; a blunt or pointed tip may also be thread-cutting (a notch or slot up through the first threads). A variant key
+// names the combination: "pan", "pan:p" (pointed), "pan:p:c" (pointed, thread-cutting: the wood screw's type 17 point),
+// "pan:c" (blunt, thread-cutting), "pan:d" (self-drilling), "pan:wfs" (flat + split washers).
 const HEAD = { border: `fill="none" stroke="${K}" stroke-width="${SW}" stroke-linejoin="round"` };
 // head shapes: drawn from the top down to `base`, where the washers and shank start
 const SHAPES = {
@@ -46,22 +47,23 @@ function washerUnder(code, y) {
   if (code === 'e') return r + [18, 82].map(x => `<line x1="${x}" y1="${y + 1}" x2="${x < 50 ? x - 5 : x + 5}" y2="${y + 3}" stroke="${K}" stroke-width="3"/><line x1="${x}" y1="${y + 5}" x2="${x < 50 ? x - 5 : x + 5}" y2="${y + 3}" stroke="${K}" stroke-width="3"/>`).join('');
   return r + [30, 38, 62, 70].map(x => `<line x1="${x}" y1="${y + 1}" x2="${x}" y2="${y + 5}" stroke="${K}" stroke-width="2.5"/>`).join('');
 }
-// shanks from y0 down: blunt or pointed, plain or cutting (thread-forming notch / drill point)
-function shankFor(pointed, cutting, y0) {
+// shanks from y0 down: a drill point (the shank necks down to a fluted bit), or blunt / pointed, plain or thread-cutting (a slot up the tip)
+function shankFor(pointed, cutting, y0, drill) {
+  if (drill) return `<path d="M44 ${y0} V70 L46 74 V84 L50 94 L54 84 V74 L56 70 V${y0} Z" fill="none" stroke="${K}" stroke-width="${SW}" stroke-linejoin="round"/><line x1="46" y1="77" x2="54" y2="85" stroke="${K}" stroke-width="3"/>` + threads(50, y0 + 6, 70);
   if (!pointed && !cutting) return shank(50, y0, 92) + threads(50, y0 + 2, 92);
   if (pointed && !cutting) return `<path d="M44 ${y0} V78 L50 94 L56 78 V${y0} Z" fill="none" stroke="${K}" stroke-width="${SW}"/>` + threads(50, y0 + 6, 78);
-  if (pointed && cutting) return `<path d="M44 ${y0} V70 L46 74 V84 L50 94 L54 84 V74 L56 70 V${y0} Z" fill="none" stroke="${K}" stroke-width="${SW}" stroke-linejoin="round"/><line x1="46" y1="77" x2="54" y2="85" stroke="${K}" stroke-width="3"/>` + threads(50, y0 + 6, 70);
+  if (pointed && cutting) return `<path d="M44 ${y0} V78 L50 94 L56 78 V${y0} Z" fill="none" stroke="${K}" stroke-width="${SW}"/><line x1="50" y1="72" x2="50" y2="90" stroke="${K}" stroke-width="3.5"/>` + threads(50, y0 + 6, 70);
   return `<path d="M44 ${y0} V92 H56 V${y0} Z" fill="none" stroke="${K}" stroke-width="${SW}" stroke-linejoin="round"/><path d="M44 84 L50 92 L56 84" fill="none" stroke="${K}" stroke-width="3"/>` + threads(50, y0 + 6, 82);
 }
 // variant keys
-const parse = name => { const [shape, ...f] = String(name).split(':'); const w = f.find(x => x[0] === 'w') || ''; return { shape, pointed: f.includes('p'), cutting: f.includes('c'), washers: [...w.slice(1)] }; };
-const key = ({ shape, pointed = false, cutting = false, washers = [] }) => shape + (pointed ? ':p' : '') + (cutting ? ':c' : '') + (washers.length ? ':w' + ['k', 'f', 's', 'e', 'i'].filter(c => washers.includes(c)).join('') : '');
+const parse = name => { const [shape, ...f] = String(name).split(':'); const w = f.find(x => x[0] === 'w') || ''; const drill = f.includes('d'); return { shape, drill, pointed: !drill && f.includes('p'), cutting: !drill && f.includes('c'), washers: [...w.slice(1)] }; };
+const key = ({ shape, pointed = false, cutting = false, drill = false, washers = [] }) => shape + (drill ? ':d' : (pointed ? ':p' : '') + (cutting ? ':c' : '')) + (washers.length ? ':w' + ['k', 'f', 's', 'e', 'i'].filter(c => washers.includes(c)).join('') : '');
 function screw(name) {
   const v = parse(name), h = SHAPES[v.shape]; if (!h) return null;
   if (h.whole) return h.whole;
   let y = h.base, g = h.svg;
   for (const w of v.washers) { g += washerUnder(w, y); y += 6; }
-  return g + shankFor(v.pointed, v.cutting, y);
+  return g + shankFor(v.pointed, v.cutting, y, v.drill);
 }
 // heads: for the legacy ALL table, the blunt plain version of each shape
 const HEADS = Object.fromEntries(Object.keys(SHAPES).map(k => [k, screw(k)]));
@@ -167,7 +169,8 @@ function label(name) {
   const v = parse(name); if (!SHAPES[v.shape]) return name;
   const parts = [LABELS[v.shape]];
   if (v.pointed) parts.push('pointed');
-  if (v.cutting) parts.push(v.pointed ? 'self-drilling' : 'thread-cutting');
+  if (v.cutting) parts.push('thread-cutting');
+  if (v.drill) parts.push('self-drilling');
   if (v.washers.length) parts.push('w/ ' + v.washers.map(c => WASHER_NAMES[WASHER_CODES[c]]).join(' + ') + ' washer');
   return parts.join(', ');
 }

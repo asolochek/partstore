@@ -34,8 +34,9 @@ records what has been printed.
 - **Cells**: click a head icon to tick it. The row of icons is the page's primary set plus anything else ticked in that cell;
   the **…** at the end offers every other head type for the class. More than nine icons and they shrink.
 - **Screws are a head shape plus properties.** Clicking a head icon ticks that shape with the page's default tip (blunt on
-  the machine pages, pointed on wood and sheet metal). **Right-click / long-press a ticked icon** for its detail: tip (blunt
-  or pointed), cutting tip (thread-forming when blunt, self-drilling when pointed), captive washers under the head (flat,
+  the machine pages, pointed on wood and sheet metal). **Right-click / long-press a ticked icon** for its detail: tip (blunt,
+  pointed or self-drilling: a drill point), thread-cutting (a notch or slot up a blunt or pointed tip, like a wood screw's
+  type 17 point), captive washers under the head (flat,
   split lock, external or internal tooth, any combination), its own location (when that head lives somewhere other than
   the rest of the cell; a badge on the icon shows it), drive types, and materials per drive. Changing tip, cutting or
   washers turns the icon into that variant, so one cell can hold, say, plain pan heads and pan heads with a captive split
