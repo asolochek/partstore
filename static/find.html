@@ -150,7 +150,7 @@ function whereBadge(r) {
   let bg = '#2f6db5', fg = '#ffffff';
   if (l.kind === 'drawer') { const c = M.cabinetById(l.cabinet); if (c) { bg = c.color; fg = c.fg; } }
   else { const z = M.labelSpec(data, l), c = M.cabinetById(data.pages.find(p => p.id === r.pageId)?.cabinet); if (!M.plainTape(z)) { bg = z.bg; fg = z.fg; } else if (c) { bg = c.color; fg = c.fg; } }   // a bin: its box's tape, else the page's category
-  return `<span class="badge" style="background:${bg};color:${fg}">${esc(M.locText(l, ''))}</span> <span class="none">${esc(placeName(l))}</span>`;
+  return `<span class="badge" style="background:${bg};color:${fg}">${esc(M.numberIn(l))}</span> <span class="none">${esc(l.kind === 'drawer' ? (M.cabinetById(l.cabinet)?.title || '') + ' · ' : '')}${esc(placeName(l))}</span>`;
 }
 function bar() {
   const n = ticked.size, vis = shown.filter(r => ticked.has(r.id)).length;
@@ -169,9 +169,9 @@ const occupied = () => new Set(rows.filter(r => r.loc).map(r => M.slotOf(r.loc))
 // the boxes and the loose bins, as targets for "a bin each"
 function boxes() {
   const P = M.positions(data), out = [];
-  P.layout.cabinets.forEach((c, i) => { if (M.KINDS[c.kind]?.bins) out.push({ id: c.id, title: `${c.title} (${M.boxPrefix(P.layout, i)}1–${M.boxPrefix(P.layout, i)}${M.KINDS[c.kind].bins})`, bins: P.bins.filter(b => b.cabIx === i).map(b => b.bin) }); });
+  P.layout.cabinets.forEach((c, i) => { if (M.KINDS[c.kind]?.bins) out.push({ id: c.id, title: `${c.title} (${M.KINDS[c.kind].bins} bins)`, bins: P.bins.filter(b => b.cabIx === i).map(b => b.bin) }); });
   const inBox = new Set(P.bins.map(b => b.bin)), loose = rows.filter(r => r.loc?.kind === 'bin' && !inBox.has(r.loc.bin)).map(r => parseInt(r.loc.bin.slice(1)) || 0);
-  out.push({ id: '', title: 'Loose bins (B…)', bins: Array.from({ length: 400 }, (_, i) => `B${i + 1}`), from: Math.max(0, ...loose) + 1 });
+  out.push({ id: '', title: 'Loose bins', bins: Array.from({ length: 400 }, (_, i) => `B${i + 1}`), from: Math.max(0, ...loose) + 1 });
   return out;
 }
 function openMove() {
@@ -182,17 +182,16 @@ function openMove() {
   $('#dlgBox').innerHTML = `<h2>Move ${sel.length} line${sel.length === 1 ? '' : 's'} (${groups.length} size${groups.length === 1 ? '' : 's'})</h2>
     <label><input type="radio" name="how" value="each" checked> A bin for each size, in <select id="mBox">${B.map((b, i) => `<option value="${i}">${esc(b.title)}</option>`).join('')}</select> from bin number <input type="number" id="mFrom" min="1" style="width:64px" placeholder="first free"></label>
     <div class="sub">Empty bins are used in order; a size's ticked lines go into its bin together.</div>
-    <label><input type="radio" name="how" value="one"> Everything into one place: <input type="text" id="mOne" placeholder="e.g. C4, B20 or W12R" style="width:150px"></label>
-    <div class="sub">A bin, or a drawer with its category letter. Whatever is already there stays, and they share a label.</div>
+    <label><input type="radio" name="how" value="one"> Everything into one place: <select id="mOneC">${M.containers(data).map(c => `<option value="${c.id}">${esc(c.title)}</option>`).join('')}</select> number <input type="text" id="mOne" placeholder="e.g. 12R or 4" style="width:80px"></label>
+    <div class="sub">A drawer (number, then R or F for a half) or a bin (its number). Whatever is already there stays, and they share a label.</div>
     <div class="plan" id="mPlan"></div><div class="err" id="mErr"></div>
     <div class="btns"><button id="mCancel">Cancel</button><button id="mGo" class="go">Move</button></div>`;
   let plan = null;
   const recompute = () => {
     const how = document.querySelector('input[name=how]:checked').value; let err = ''; plan = [];
     if (how === 'one') {
-      const l = M.parseLoc($('#mOne').value);
-      if (!l) err = $('#mOne').value.trim() ? 'That is not a place I understand. Use a bin (C4, B20) or a drawer with its category letter (W12R).' : 'Say where.';
-      else if (l.kind === 'drawer' && !l.cabinet) err = `A drawer needs its category letter here (${M.CABINETS.map(c => c.prefix).join(', ')}), e.g. ${M.CABINETS[0].prefix}${l.drawer}.`;
+      const l = M.placeIn(M.containers(data).find(c => c.id === $('#mOneC').value), $('#mOne').value);
+      if (!l) err = $('#mOne').value.trim() ? 'That number does not read. A drawer: 12, 12R or 12F. A bin: just its number.' : 'Say which number.';
       else plan = groups.map(g => ({ g, to: l }));
     } else {
       const b = B[+$('#mBox').value], taken = occupied(), from = +$('#mFrom').value || b.from || 1;
@@ -201,7 +200,7 @@ function openMove() {
       else plan = groups.map((g, i) => ({ g, to: { kind: 'bin', bin: free[i] } }));
     }
     $('#mErr').textContent = err; $('#mGo').disabled = !!err;
-    $('#mPlan').innerHTML = plan.map(p => `<div><span><b>${esc(p.g.size)}</b> <span class="none">${esc(p.g.page)} · ${p.g.rows.length} line${p.g.rows.length === 1 ? '' : 's'}</span></span><span>→ ${esc(M.locText(p.to, ''))}</span></div>`).join('');
+    $('#mPlan').innerHTML = plan.map(p => `<div><span><b>${esc(p.g.size)}</b> <span class="none">${esc(p.g.page)} · ${p.g.rows.length} line${p.g.rows.length === 1 ? '' : 's'}</span></span><span>→ ${esc(M.locName(p.to, ''))}</span></div>`).join('');
   };
   $('#dlgBox').querySelectorAll('input, select').forEach(x => x.oninput = x.onchange = recompute);
   $('#mOne').onfocus = () => { document.querySelector('input[name=how][value=one]').checked = true; recompute(); };

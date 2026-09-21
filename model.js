@@ -242,7 +242,33 @@ const portionSlot = p => p.kind === 'bin' ? `B:${p.bin}` : p.kind === 'drawer' ?
 // than `home` (a page's own cabinet); parseLoc reads the same (plus "12 rear", "bin 3", "b3", "M12R")
 const prefixFor = (l, home) => l.cabinet && l.cabinet !== home ? (cabinetById(l.cabinet)?.prefix || '') : '';
 const locText = (l, home) => !l ? '' : l.kind === 'bin' ? l.bin : prefixFor(l, home) + l.drawer + (l.half === 'back' ? 'R' : l.half === 'front' ? 'F' : '');
-const locLong = (l, home) => !l ? '' : l.kind === 'bin' ? `bin ${l.bin}` : `${l.cabinet && l.cabinet !== home ? cabinetById(l.cabinet)?.title.replace(/ screws$/, '') + ' ' : ''}drawer ${l.drawer}${l.half === 'back' ? ' rear' : l.half === 'front' ? ' front' : ''}`;
+// ---- places as people see them ----
+// The category letters and box letters ("M12R", "C5") are only how a place is written in one token internally. People choose a
+// container by name (a category's drawers, a box of bins, the loose bins) and give a number in it.
+// containers(d) -> [{ id, kind: 'drawer' | 'bin', title, cabinet | prefix }]
+function containers(d) {
+  const lay = layoutOf(d), out = categoriesOf(d).map(c => ({ id: `cat:${c.id}`, kind: 'drawer', cabinet: c.id, title: c.title }));
+  lay.cabinets.forEach((c, i) => { if ((KINDS[c.kind] || {}).bins) out.push({ id: `box:${boxPrefix(lay, i)}`, kind: 'bin', prefix: boxPrefix(lay, i), title: c.title, bins: KINDS[c.kind].bins }); });
+  out.push({ id: 'box:B', kind: 'bin', prefix: 'B', title: 'Loose bins' });
+  return out;
+}
+const containerOf = (l, home) => !l ? '' : l.kind === 'bin' ? `box:${l.bin[0]}` : `cat:${l.cabinet || home || ''}`;
+// the number of a place within its container: "12R", "5"
+const numberIn = l => !l ? '' : l.kind === 'bin' ? l.bin.slice(1) : l.drawer + (l.half === 'back' ? 'R' : l.half === 'front' ? 'F' : '');
+// a container + what was typed -> a location, null for nothing typed, undefined when it cannot be read
+function placeIn(container, text) {
+  const t = String(text || '').trim(); if (!t) return null; if (!container) return undefined;
+  if (container.kind === 'bin') { const m = /^(?:bin\s*)?(\d+)$/i.exec(t); return m ? { kind: 'bin', bin: `${container.prefix}${+m[1]}` } : undefined; }
+  const m = /^(\d+)\s*(r|rear|b|back|f|front)?$/i.exec(t); if (!m) return undefined;
+  const h = (m[2] || '').toLowerCase();
+  return { kind: 'drawer', cabinet: container.cabinet, drawer: m[1], half: /^(r|rear|b|back)$/.test(h) ? 'back' : /^(f|front)$/.test(h) ? 'front' : '' };
+}
+const boxTitle = bin => { const c = containers(current()).find(x => x.kind === 'bin' && x.prefix === String(bin)[0]); return c ? c.title : 'Bins'; };
+// a place in words: "12R" on its own category's page, "Metric 12R" elsewhere (the category's first word); a bin is its box's name
+// and its number, "Plastics box bin 5", or "bin 5" among the loose ones
+const locName = (l, home) => !l ? '' : l.kind === 'bin' ? (l.bin[0] === 'B' ? `bin ${l.bin.slice(1)}` : `${boxTitle(l.bin)} bin ${l.bin.slice(1)}`)
+  : (l.cabinet && l.cabinet !== home ? (cabinetById(l.cabinet)?.title || '').split(/\s+/)[0] + ' ' : '') + numberIn(l);
+const locLong = (l, home) => !l ? '' : l.kind === 'bin' ? locName(l, home) : `${l.cabinet && l.cabinet !== home ? cabinetById(l.cabinet)?.title.replace(/ screws$/, '') + ' ' : ''}drawer ${l.drawer}${l.half === 'back' ? ' rear' : l.half === 'front' ? ' front' : ''}`;
 function parseLoc(text) {
   const t = String(text || '').trim(); if (!t) return null;
   let m = /^(bin\s*)?([a-z])\s*(\d+)$/i.exec(t); if (m && (m[1] || !cabinetByPrefix(m[2]))) return { kind: 'bin', bin: `${m[2].toUpperCase()}${+m[3]}` };   // B = loose bins, any other letter that is not a category's = a box
@@ -274,6 +300,6 @@ function drawerOrder(page, groups) {
   const key = g => { const c = g[0]; return c.kind === 'drawer' ? [0, cabIx(c.cabinet), +c.drawer, c.half === 'front' ? 1 : 0] : c.kind === 'bin' ? [1, 0, 0, 0] : [2, 0, 0, 0]; };
   return groups.map((g, i) => [g, key(g), i]).sort((a, b) => (a[1][0] - b[1][0]) || (a[1][1] - b[1][1]) || (a[1][2] - b[1][2]) || (a[1][3] - b[1][3]) || (a[2] - b[2])).map(x => x[0]);
 }
-const api = { bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
+const api = { locName, containers, containerOf, numberIn, placeIn, boxTitle, bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
 if (typeof module !== 'undefined') module.exports = api; else window.M = api;   // the same file is served to the browser
 })();

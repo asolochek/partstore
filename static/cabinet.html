@@ -259,7 +259,7 @@ function planDelete(all, i, range) {
   shift(moved, -1, i);
   return { moved: moved.filter(u => u.to !== u.start) };
 }
-function describe(cabId, moved) { return moved.map(u => `${M.locText(locAt(cabId, u.start, u.size === 2), cabId)}→${M.locText(locAt(cabId, u.to, u.size === 2), cabId)}`).join(', '); }
+function describe(cabId, moved) { return moved.map(u => `${M.locName(locAt(cabId, u.start, u.size === 2), cabId)}→${M.locName(locAt(cabId, u.to, u.size === 2), cabId)}`).join(', '); }
 async function apply(cabId, plan, then, what) {
   if (plan.error) return alert(plan.error);
   if (plan.moved.length && !confirm(`This moves ${plan.moved.length} label${plan.moved.length === 1 ? '' : 's'} in the ${cabOf(cabId).title.replace(/ screws$/, '')} cabinet: ${describe(cabId, plan.moved)}. Go ahead?`)) return;
@@ -383,7 +383,7 @@ function halfMenu(cabId, i, x, y) {
 
 // ---- rendering ----
 function binEl(id, entries) {
-  const el = document.createElement('div'); el.className = 'bin'; el.innerHTML = `<span class="n">${id}</span>`;
+  const el = document.createElement('div'); el.className = 'bin'; el.title = M.locName({ kind: 'bin', bin: id }); el.innerHTML = `<span class="n">${id.slice(1)}</span>`;   // the number; the letter in the id is internal
   // the bin's badge: the tape colours of its box; when that is plain, the category of what is in it (if it is all one category); else blue
   const z = M.labelSpec(data, { kind: 'bin', bin: id }), cats = [...new Set(entries.flatMap(e => e.parts.map(p => pageOf(p.pageId || e.pageId)?.cabinet || '')))], c = cats.length === 1 ? M.cabinetById(cats[0]) : null;
   const n = el.firstChild; if (!M.plainTape(z)) { n.style.background = z.bg; n.style.color = z.fg; } else if (c) { n.style.background = c.color; n.style.color = c.fg; }
@@ -403,15 +403,15 @@ function renderSettings() {
   let h = `<b>Cabinets</b><div class="note">In physical order; drawer numbering runs across them, category by category.</div>
     <table><tr class="hd"><td>Name</td><td>Kind</td><td>Labels</td><td>Text on tape</td><td></td></tr>` +
     lay.cabinets.map((c, i) => `<tr><td><input class="sTitle" data-i="${i}" value="${esc(c.title)}" style="width:130px"></td><td><select class="sKind" data-i="${i}">${Object.entries(M.KINDS).map(([k, v]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${v.title}</option>`).join('')}</select>` +
-      (M.KINDS[c.kind]?.bins ? ` <span class="note">bin letter</span> <input class="sPrefix" data-i="${i}" value="${M.boxPrefix(lay, i)}" maxlength="1" style="width:28px;text-transform:uppercase" title="its bins are this letter + number; B is for loose bins, and the categories' letters are taken">` : '') + `</td>` +
+      `</td>` +
       `<td>${labelCell(i, c.label, M.KINDS[c.kind]?.bins ? 'bin' : 'drawer')}</td><td><button type="button" class="sUp" data-i="${i}" title="move up">↑</button><button type="button" class="sDn" data-i="${i}" title="move down">↓</button><button type="button" class="sRm" data-i="${i}" title="remove">×</button></td></tr>`).join('') +
     `<tr><td>Loose bins</td><td class="note">B-numbered, not in any box</td><td>${labelCell('loose', lay.loose?.label, 'bin')}</td><td></td></tr></table>
     <div class="note">Labels: tape width × length, and the tape loaded for them. Changing either makes those labels count as unprinted; each kind of tape prints as its own job.</div>
     <div class="row"><button type="button" id="sAdd">Add cabinet</button></div>
     <h3>Categories</h3><div class="note">Each numbers its drawers from 1. The colours are those of its drawer-number labels, shown on the drawer badges.</div>
-    <table><tr class="hd"><td>Badge</td><td>Name</td><td>Letter</td><td>Drawers</td><td></td><td></td></tr>` +
+    <table><tr class="hd"><td>Badge</td><td>Name</td><td>Drawers</td><td></td><td></td></tr>` +
     C.map((c, i) => { const r = P.ranges.find(r => r.id === c.id); return `<tr><td><input type="color" class="cFg" data-i="${i}" value="${c.fg}" title="number colour"> on <input type="color" class="cBg" data-i="${i}" value="${c.color}" title="label colour"> <span class="n" style="background:${c.color};color:${c.fg};padding:1px 6px;border-radius:8px;font-size:11px;font-weight:600">12</span></td>` +
-      `<td><input class="cTitle" data-i="${i}" value="${esc(c.title)}" style="width:190px"></td><td><input class="cPrefix" data-i="${i}" value="${c.prefix}" maxlength="1" style="width:28px;text-transform:uppercase" title="written before a drawer number on another category's page, e.g. ${c.prefix}12R"></td>` +
+      `<td><input class="cTitle" data-i="${i}" value="${esc(c.title)}" style="width:190px"></td>` +
       `<td>${i === last ? `<span class="note">the rest: ${r.count}</span>` : `<input type="number" min="0" class="sCount" data-id="${c.id}" value="${lay.counts[c.id] || 0}" style="width:70px">`}</td><td class="note">positions ${r.count ? `${r.start}–${r.start + r.count - 1}` : '(none)'}</td>` +
       `<td><button type="button" class="cRm" data-i="${i}" ${used(c.id) || C.length < 2 ? 'disabled title="in use: a page belongs to it or stock is in its drawers"' : 'title="remove"'}>×</button></td></tr>`; }).join('') + `</table>
     <div class="row"><button type="button" id="cAdd">Add category</button></div>
@@ -428,11 +428,14 @@ function renderSettings() {
   const read = () => {
     const l = M.layoutOf(data);
     const cats = C.map((c, i) => ({ id: c.id, prefix: c.prefix, title: q('cTitle', i).value.trim() || c.title, color: q('cBg', i).value, fg: q('cFg', i).value }));
-    cats.forEach((c, i) => { const v = q('cPrefix', i).value.trim().toUpperCase(); if (/^[A-Z]$/.test(v) && v !== 'B' && !cats.some((x, j) => j !== i && x.prefix === v) && !l.cabinets.some((b, j) => M.KINDS[b.kind]?.bins && M.boxPrefix(l, j) === v)) c.prefix = v; });
+    // (letters are internal: a category keeps the one it has; a new box gets the first free one below, and keeps it)
     l.cabinets = [...el.querySelectorAll('.sTitle')].map((t, i) => { const c = { ...l.cabinets[i], title: t.value.trim() || l.cabinets[i].title, kind: q('sKind', i).value }; delete c.first;
-      const f = q('sPrefix', i); if (f) { const v = f.value.trim().toUpperCase(); if (M.BIN_LETTERS.includes(v) && !cats.some(x => x.prefix === v)) c.prefix = v; }
       if (!!M.KINDS[c.kind]?.bins === !!M.KINDS[l.cabinets[i].kind]?.bins) readLabel(c, i); else delete c.label;   // drawers <-> bins: back to that kind's default label
       return c; });
+    // a box's bins are written with its letter, so the letter is fixed the moment the box exists (it must never shift when boxes are reordered)
+    const isBox = c => !!M.KINDS[c.kind]?.bins, taken = new Set(['B', ...cats.map(c => c.prefix), ...l.cabinets.filter(c => isBox(c) && c.prefix).map(c => c.prefix)]);
+    data.layout?.cabinets?.forEach((c0, i) => { const c = l.cabinets.find(x => x.id === c0.id); if (c && isBox(c) && !c.prefix && isBox(c0)) { c.prefix = M.boxPrefix(M.layoutOf(data), i); taken.add(c.prefix); } });
+    for (const c of l.cabinets) if (isBox(c) && !c.prefix) { c.prefix = 'ACDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find(ch => !taken.has(ch)) || 'Z'; taken.add(c.prefix); }
     l.loose = { ...(l.loose || {}) }; readLabel(l.loose, 'loose'); if (!Object.keys(l.loose).length) delete l.loose;
     el.querySelectorAll('.sCount').forEach(x => l.counts[x.dataset.id] = +x.value || 0);
     return { layout: l, categories: cats };
@@ -448,7 +451,7 @@ function renderSettings() {
     st.categories.push({ id: 'k' + Date.now().toString(36), prefix: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find(ch => !taken.has(ch)) || '', title: 'New category', color: '#5b6470', fg: '#ffffff' }); restage(st); };
   el.querySelectorAll('.cRm').forEach(b => b.onclick = () => { const st = read(), [gone] = st.categories.splice(+b.dataset.i, 1); delete st.layout.counts[gone.id]; restage(st); });
   el.querySelectorAll('.pCat').forEach(x => x.onchange = () => { const st = read(); M.recategorize(data.pages[+x.dataset.i], x.value); restage(st); });
-  el.querySelectorAll('.sKind, .sCount, .sPrefix, .cPrefix, .cBg, .cFg').forEach(x => x.onchange = () => restage(read()));
+  el.querySelectorAll('.sKind, .sCount, .cBg, .cFg').forEach(x => x.onchange = () => restage(read()));
   $('#sSave').onclick = async () => { const st = read(); data.layout = st.layout; data.categories = st.categories; if (settingsBefore) { undoStack.push(settingsBefore); if (undoStack.length > 30) undoStack.shift(); $('#undo').disabled = false; }
     if (await commit('cabinets saved')) { settingsBefore = null; $('#settings').style.display = 'none'; } };
   $('#sClose').onclick = () => { $('#settings').style.display = 'none'; load(); };
@@ -475,7 +478,7 @@ function drawerZones(el, c, n, d) {
 }
 function render() {
   const P = M.positions(data), lay = P.layout;
-  $('#cablegend').innerHTML = cab.cabinets.map(c => { const r = P.ranges.find(r => r.id === c.id); return `<span><b class="badge" style="background:${c.color};color:${c.fg || '#fff'}">${c.prefix}</b>${c.title} (${r ? r.count : 0} drawers)</span>`; }).join('');
+  $('#cablegend').innerHTML = cab.cabinets.map(c => { const r = P.ranges.find(r => r.id === c.id); return `<span><b class="badge" style="background:${c.color};color:${c.fg || '#fff'}">${r ? r.count : 0}</b>${c.title}</span>`; }).join('');
   $('#tabs').innerHTML = lay.cabinets.map(c => `<span class="tab${hidden.has(c.id) ? '' : ' on'}" data-v="${c.id}" title="show / hide">${c.title}</span>`).join('');
   $('#tabs').querySelectorAll('.tab').forEach(t => t.onclick = () => { if (hidden.has(t.dataset.v)) hidden.delete(t.dataset.v); else hidden.add(t.dataset.v); rememberHidden(); render(); });
   const wrap = $('#cabinets'); wrap.innerHTML = '';

@@ -305,7 +305,7 @@ app.post('/api/labels', async (req, res) => {
   }
   let groups = [], name = 'all', bins = [];
   if (req.body.drawers) {
-    const home = d.pages.find(p => p.id === req.body.page)?.cabinet || M.CABINETS[0].id;
+    const home = (M.cabinetById(req.body.category) ? req.body.category : '') || d.pages.find(p => p.id === req.body.page)?.cabinet || M.CABINETS[0].id;   // category: whose drawers the bare numbers are
     const ok = drawerMatcher(req.body.drawers, home); if (!ok) return res.status(400).json({ error: 'bad drawer list; use e.g. 12-16, 20, 30R, M3' });
     groups = all.filter(g => g[0].kind === 'drawer' && ok(g[0].cabinet, g[0].drawer, g[0].half));
     // cabinet, then drawer order, rear before front

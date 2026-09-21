@@ -46,6 +46,7 @@ td.washer { background:var(--none); }
 #pop .locbtn.set { background:var(--accent); color:#fff; border-color:var(--accent); }
 #pop .locbtn.bin { background:#2f6db5; color:#fff; border-color:#2f6db5; }
 #pop .loc { display:flex; align-items:center; gap:8px; }
+#pop .locrow { display:flex; gap:6px; margin:3px 0; } #pop .locrow select { flex:1; min-width:0; font:inherit; padding:3px 4px; border:1px solid var(--line); border-radius:4px; } #pop .locrow input[type=text] { width:78px; flex:none; }
 .ic.hasinfo::after { content:''; position:absolute; left:2px; top:2px; width:6px; height:6px; border-radius:3px; background:var(--ink2); }
 .more { width:28px; height:44px; display:flex; align-items:center; justify-content:center; color:var(--ink2); cursor:pointer; border-radius:3px; font-weight:600; }
 .more:hover { background:#fff; color:var(--ink); }
@@ -227,39 +228,45 @@ function locBadge(el, o) {
 }
 function locSummary(o, fallback = '') {
   const l = M.locOf(o), over = M.overflowOf(o), home = page().cabinet;
-  return (l ? M.locLong(l, home) : fallback) + (over.length ? ' +' + over.map(x => M.locText(x, home)).join(',') : '');
+  return (l ? M.locLong(l, home) : fallback) + (over.length ? ' +' + over.map(x => M.locName(x, home)).join(', ') : '');
 }
 // the cabinet a page's bare drawer numbers refer to; a list page without one needs the prefix (I, M, W) in its locations
-const catLetters = () => M.CABINETS.map(c => c.prefix).join(' / ');
-const cabHint = () => page().cabinet ? `${(M.cabinetById(page().cabinet)?.title || '').replace(/ screws$/, '')} cabinet; ${catLetters()} prefix for another, e.g. ${M.CABINETS[0].prefix}12R` : `this page has no cabinet: prefix drawers with ${catLetters()}, e.g. ${M.CABINETS[0].prefix}12R`;
+const catOptions = sel => M.CABINETS.map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${c.title}</option>`).join('');
 // the editor: primary and overflow locations of `target` (a cell, a head type's detail, or one drive+material's item)
 function openLoc(key, target, title, x, y, back) {
+  // a place = where (a category's drawers, a box of bins, the loose bins: chosen by name) + its number there
+  const C = M.containers(data), home = page().cabinet || '', prim0 = M.locOf(target), over0 = M.overflowOf(target);
+  const dflt = prim0 ? M.containerOf(prim0, home) : (home ? `cat:${home}` : C[0].id);
+  const row = (cls, l, fallback) => { const sel = l ? M.containerOf(l, home) : fallback;
+    return `<div class="locrow"><select class="${cls}C">${C.map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${c.title}</option>`).join('')}</select><input type="text" class="${cls}N" value="${M.numberIn(l)}" placeholder="${cls === 'lp' ? 'e.g. 12R' : 'number'}"></div>`; };
   $('#pop').innerHTML = `<h3>Location · ${title}</h3>
-    <h4>Primary</h4><input type="text" id="popLoc" placeholder="${target === page().cells?.[key] || M.isList(page()) ? 'e.g. 12, 12R, 12F or B3' : 'blank = as the level above; e.g. 12R or B3'}" value="${M.locText(M.locOf(target), page().cabinet)}">
-    <h4>Overflow</h4><input type="text" id="popOver" placeholder="e.g. B2, 13F" value="${M.overflowOf(target).map(x => M.locText(x, page().cabinet)).join(', ')}">
-    <div class="note">Drawers: number, then R (rear) or F (front) if divided; bare numbers are the ${cabHint()}. Bins: B and a number for a loose bin, a box's letter and number (A3) for a bin in a box. Overflow: a list.</div>
-    <div class="row"><button type="button" id="popGo">Save</button><button type="button" id="popClose">Cancel</button></div>`;
+    <h4>Primary</h4>${row('lp', prim0, dflt)}
+    <h4>Overflow</h4><div id="popOverRows">${[...over0, null].map(l => row('lo', l, 'box:B')).join('')}</div>
+    <div class="note">Drawers: the number, then R (rear) or F (front) if divided. Bins: just the number. ${target === page().cells?.[key] || M.isList(page()) ? 'Leave the number empty for no place.' : 'An empty primary means: wherever the level above is.'}</div>
+    <div class="row"><button type="button" id="popGo">Save</button><button type="button" id="popMore" title="another overflow place">+ overflow</button><button type="button" id="popClose">Cancel</button></div>`;
   const done = () => { closePop(); if (back) back(); };
+  $('#popMore').onclick = () => { $('#popOverRows').insertAdjacentHTML('beforeend', row('lo', null, 'box:B')); };
   $('#popGo').onclick = () => {
-    const prim = M.parseLoc($('#popLoc').value), over = M.parseLocs($('#popOver').value);
-    if (prim === undefined || over.some(l => l === undefined)) return alert('Could not read a location. Use 12, 12R, 12F, M12R or B3.');
-    if (!page().cabinet && [prim, ...over].some(l => l && l.kind === 'drawer' && !l.cabinet)) return alert(`This page has no cabinet of its own: prefix drawer numbers with ${catLetters()} (e.g. ${M.CABINETS[0].prefix}12R).`);
-    for (const l of [prim, ...over]) if (l && l.cabinet === page().cabinet) delete l.cabinet;   // the page's own cabinet stays implicit
+    const read = el => M.placeIn(C.find(c => c.id === el.querySelector('select').value), el.querySelector('input').value);
+    const rows = [...$('#pop').querySelectorAll('.locrow')].map(read);
+    if (rows.some(l => l === undefined)) return alert('Could not read a number. Drawers: 12, 12R or 12F. Bins: just the number.');
+    const prim = rows[0], over = rows.slice(1).filter(Boolean);
+    for (const l of [prim, ...over]) if (l && l.kind === 'drawer' && l.cabinet === page().cabinet) delete l.cabinet;   // the page's own category stays implicit
     delete target.drawer; delete target.half;   // the old fields
     if (prim) target.loc = prim; else delete target.loc;
     if (over.length) target.overflow = over; else delete target.overflow;
     save(); render(); done();
   };
   $('#popClose').onclick = done; placePop(x, y);
-  $('#popLoc').focus();
-  $('#pop').querySelectorAll('input').forEach(i => i.onkeydown = e => { if (e.key === 'Enter') $('#popGo').click(); });
+  $('#pop').querySelector('.lpN').focus();
+  $('#pop').onkeydown = e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') $('#popGo')?.click(); };
 }
 // the per-type badge on an icon: its own location, "…" when its drives/materials are split over locations, "+" for overflow
 function typeBadge(info) {
   const l = M.locOf(info), over = M.overflowOf(info), items = Object.values(info.items || {}).filter(it => M.locOf(it) || M.overflowOf(it).length);
   if (!l && !over.length && !items.length) return null;
   const b = document.createElement('span'); b.className = 'badge' + (l?.kind === 'bin' ? ' bin' : !l ? ' mixed' : '');
-  b.textContent = (l ? M.locText(l, page().cabinet) : '…') + (over.length ? '+' : '');
+  b.textContent = (l ? M.locName(l, page().cabinet) : '…') + (over.length ? '+' : '');
   return b;
 }
 // a variant created on the page may not be in the icon set yet: fetch it before drawing
@@ -692,8 +699,27 @@ $('#helperBtn').onclick = () => { const t = $('#helper'); if (t.style.display ==
 $('#cabinetBtn').onclick = () => window.open(`cabinet.html?page=${encodeURIComponent(pageId)}`, '_blank');
 $('#findBtn').onclick = () => window.open('find.html', '_blank');
 $('#printAll').onclick = () => printKeys('all');
-$('#printDrawers').onclick = () => { const v = prompt(`Drawers to print: a list or ranges, R/F for one half of a divided drawer; bare numbers are the ${cabHint()}. e.g. 12-16, 20, 30R, M3-5`); if (v) printKeys(null, { drawers: v, page: pageId }); };
-$('#printBins').onclick = () => { const v = prompt('Bins to print: a list or ranges, or "all". e.g. B1, B3-5, A2-4'); if (v) printKeys(null, { bins: v.trim().toLowerCase() === 'all' ? 'all' : v }); };
+$('#printDrawers').onclick = e => {
+  $('#pop').innerHTML = `<h3>Labels by drawer</h3><h4>Drawers</h4><input type="text" id="pdList" placeholder="e.g. 12-16, 20, 30R">
+    <h4>of</h4><select id="pdCat" style="width:100%;font:inherit;padding:3px 4px">${catOptions(page().cabinet || M.CABINETS[0].id)}</select>
+    <div class="note">A list or ranges; R or F for one half of a divided drawer.</div>
+    <div class="row"><button type="button" id="pdGo">PDF</button><button type="button" id="popClose">Cancel</button></div>`;
+  $('#pdGo').onclick = () => { const v = $('#pdList').value.trim(), category = $('#pdCat').value; if (!v) return; closePop(); printKeys(null, { drawers: v, page: pageId, category }); };
+  $('#popClose').onclick = closePop; $('#pdList').onkeydown = ev => { if (ev.key === 'Enter') $('#pdGo').click(); };
+  const r = e.target.getBoundingClientRect(); placePop(r.left, r.bottom + 6); $('#pdList').focus();
+};
+$('#printBins').onclick = e => {
+  const B = M.containers(data).filter(c => c.kind === 'bin');
+  $('#pop').innerHTML = `<h3>Labels for bins</h3><h4>Bins of</h4><select id="pbBox" style="width:100%;font:inherit;padding:3px 4px"><option value="">every box and the loose bins</option>${B.map(c => `<option value="${c.prefix}">${c.title}</option>`).join('')}</select>
+    <h4>Which</h4><input type="text" id="pbList" placeholder="all, or e.g. 1, 3-5">
+    <div class="row"><button type="button" id="pbGo">PDF</button><button type="button" id="popClose">Cancel</button></div>`;
+  $('#pbGo').onclick = () => { const box = $('#pbBox').value, v = $('#pbList').value.trim().toLowerCase();
+    // the server's bin list is written with the box letters; they are put on here
+    let bins; if (!box) bins = 'all'; else { const have = [...new Set(data.pages.flatMap(p => M.bins(p)))].filter(b => b[0] === box); bins = !v || v === 'all' ? have : v.split(/[,\s]+/).filter(Boolean).map(t => box + t).join(', '); }
+    if (Array.isArray(bins) && !bins.length) return alert('Nothing is kept in those bins.');
+    closePop(); printKeys(null, { bins }); };
+  $('#popClose').onclick = closePop; const r = e.target.getBoundingClientRect(); placePop(r.left, r.bottom + 6);
+};
 $('#printNew').onclick = () => printKeys('new');
 $('#markPrinted').onclick = async () => {
   if (!confirm('Record every populated cell on this page as printed with its current text?')) return;

@@ -53,9 +53,11 @@ records what has been printed.
   (blue), Wood & sheet metal screws (red). Physically they fill a row of cabinets in that order, a category's numbering
   running on across cabinets (Imperial 65–88 are the top rows of cabinet 2). **Cabinets…** on the map sets the physical
   cabinets (8 × 8 drawers, 4 × 4, 4 × 4 with three wide drawers down each side, or a 6 × 4, 6 × 2 or 4 × 3 box of bins), their order, and how many
-  drawers each category has; the last category takes the rest. Each box has a letter of its own and holds bins A1, A2, …; loose bins not in a box are B-numbered. A page belongs
-  to a category, so a bare drawer number means that category; a prefix reaches another (`I12R`, `M3`, `W40F`), and a list
-  page with no category of its own always needs the prefix.
+  drawers each category has; the last category takes the rest. Each box of bins numbers its bins from 1, and the loose bins have a numbering of their own. A page belongs
+  to a category, so a drawer number on it means that category unless another is chosen. Places are always given as a name and a
+  number: the location editor, the print panels and Find offer the categories, the boxes and the loose bins by name, and you
+  type the number (`12R`, or `5` for a bin). Internally a place is one token with a letter for its category or box (`M12R`,
+  `C5`); the letters are assigned automatically, never shown, and a box keeps its letter for good.
   The drawer map's **Cabinets…** panel names the cabinets, adds and renames categories, sets each one's letter and the colours
   of its drawer-number labels (number on label; shown on the drawer badges and the grid's location badges), and says which
   category each page belongs to; moving a page to another category leaves its stock where it is. A cabinet, a box of bins or
