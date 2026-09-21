@@ -144,11 +144,12 @@ function render() {
   $('#rows').querySelectorAll('tr.row').forEach(tr => tr.onclick = () => { const id = tr.dataset.id; ticked.has(id) ? ticked.delete(id) : ticked.add(id); tr.classList.toggle('on', ticked.has(id)); tr.querySelector('input').checked = ticked.has(id); bar(); });
   bar();
 }
-// a place, drawn as on the other pages: a drawer in its category's colours, a bin in its box's tape colours (or the usual blue)
+// a place, drawn as on the other pages: a drawer in its category's colours; a bin in its box's tape colours, else its page's category's, else blue
 function whereBadge(r) {
   const l = r.loc; if (!l) return '<span class="none">unassigned</span>';
   let bg = '#2f6db5', fg = '#ffffff';
-  if (l.kind === 'drawer') { const c = M.cabinetById(l.cabinet); if (c) { bg = c.color; fg = c.fg; } } else { const z = M.labelSpec(data, l); if (!M.plainTape(z)) { bg = z.bg; fg = z.fg; } }
+  if (l.kind === 'drawer') { const c = M.cabinetById(l.cabinet); if (c) { bg = c.color; fg = c.fg; } }
+  else { const z = M.labelSpec(data, l), c = M.cabinetById(data.pages.find(p => p.id === r.pageId)?.cabinet); if (!M.plainTape(z)) { bg = z.bg; fg = z.fg; } else if (c) { bg = c.color; fg = c.fg; } }   // a bin: its box's tape, else the page's category
   return `<span class="badge" style="background:${bg};color:${fg}">${esc(M.locText(l, ''))}</span> <span class="none">${esc(placeName(l))}</span>`;
 }
 function bar() {

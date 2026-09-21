@@ -384,6 +384,9 @@ function halfMenu(cabId, i, x, y) {
 // ---- rendering ----
 function binEl(id, entries) {
   const el = document.createElement('div'); el.className = 'bin'; el.innerHTML = `<span class="n">${id}</span>`;
+  // the bin's badge: the tape colours of its box; when that is plain, the category of what is in it (if it is all one category); else blue
+  const z = M.labelSpec(data, { kind: 'bin', bin: id }), cats = [...new Set(entries.flatMap(e => e.parts.map(p => pageOf(p.pageId || e.pageId)?.cabinet || '')))], c = cats.length === 1 ? M.cabinetById(cats[0]) : null;
+  const n = el.firstChild; if (!M.plainTape(z)) { n.style.background = z.bg; n.style.color = z.fg; } else if (c) { n.style.background = c.color; n.style.color = c.fg; }
   for (const card of cardsOf(entries, { kind: 'bin', bin: id })) el.appendChild(makeCard(card));
   dropZone(el, card => dropOnBin(card, id)); return el;
 }
