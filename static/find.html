@@ -77,7 +77,7 @@ const esc = t => String(t ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': 
 let data, icons = { svg: {}, labels: {} }, rows = [], shown = [], undoStack = [];
 const ticked = new Set(), picked = {};   // picked: facet -> Set of values
 M.bind(() => data);
-const DRIVE_NAME = { slotted: 'Slotted', phillips: 'Phillips', combo: 'Slotted + Phillips', pozidriv: 'Pozidriv', jis: 'JIS', torx: 'Torx', hex: 'Hex', square: 'Square' };
+const DRIVE_NAME = { slotted: 'Slotted', phillips: 'Phillips', combo: 'Slotted + Phillips', pozidriv: 'Pozidriv', jis: 'JIS', torx: 'Torx', torxplus: 'Torx Plus', hex: 'Hex', square: 'Square' };
 const MAT_NAME = { steel: 'Steel', stainless: 'Stainless', aluminum: 'Aluminum', brass: 'Brass', nylon: 'Nylon', ptfe: 'PTFE', phenolic: 'Phenolic', pei: 'PEI', polycarbonate: 'Polycarbonate', plastic: 'Plastic', fiber: 'Fiber', copper: 'Copper', bronze: 'Bronze' };
 const FIN_NAME = { blackoxide: 'black oxide', brass: 'brass plated', bronze: 'bronze plated', cadmium: 'cadmium', chrome: 'chrome', nickel: 'nickel', galvanized: 'galvanized', zinc: 'zinc', zincyellow: 'zinc yellow chromate', tin: 'tin / TiN', ceramic: 'ceramic (exterior)', ticn: 'TiCN', anodized: 'anodized', tinzinc: 'tin zinc', gold: 'gold' };
 const NONE = '(not recorded)';

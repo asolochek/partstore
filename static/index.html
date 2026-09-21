@@ -635,7 +635,7 @@ function openVariant(key, type, x, y) {
 }
 // which head / nut / washer types this page shows (types ticked in cells but hidden here still print)
 // drive and material vocabularies for the per-head detail (right-click / long-press on a ticked icon)
-const DRIVES = [['slotted', 'Slotted'], ['phillips', 'Phillips'], ['combo', 'Slotted + Phillips combo'], ['pozidriv', 'Pozidriv'], ['jis', 'JIS'], ['torx', 'Torx'], ['hex', 'Hex'], ['square', 'Square']];
+const DRIVES = [['slotted', 'Slotted'], ['phillips', 'Phillips'], ['combo', 'Slotted + Phillips combo'], ['pozidriv', 'Pozidriv'], ['jis', 'JIS'], ['torx', 'Torx'], ['torxplus', 'Torx Plus'], ['hex', 'Hex'], ['square', 'Square']];
 const FIXED_DRIVE = { socket: 'hex', shoulder: 'hex', setscrew: 'hex', thumb: 'none' };   // by shape
 // hex and hex washer heads: the external hex is implied; the choice is what recess, if any, is added to it
 const HEX_DRIVES = [['hex', 'None'], ['slotted', 'Slotted'], ['phillips', 'Phillips'], ['pozidriv', 'Pozidriv'], ['jis', 'JIS']];
