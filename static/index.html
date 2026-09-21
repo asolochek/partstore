@@ -636,10 +636,12 @@ function openVariant(key, type, x, y) {
 // which head / nut / washer types this page shows (types ticked in cells but hidden here still print)
 // drive and material vocabularies for the per-head detail (right-click / long-press on a ticked icon)
 const DRIVES = [['slotted', 'Slotted'], ['phillips', 'Phillips'], ['combo', 'Slotted + Phillips combo'], ['pozidriv', 'Pozidriv'], ['jis', 'JIS'], ['torx', 'Torx'], ['torxplus', 'Torx Plus'], ['hex', 'Hex'], ['square', 'Square']];
-const FIXED_DRIVE = { socket: 'hex', shoulder: 'hex', setscrew: 'hex', thumb: 'none' };   // by shape
+const FIXED_DRIVE = { shoulder: 'hex', setscrew: 'hex', thumb: 'none' };   // by shape
 // hex and hex washer heads: the external hex is implied; the choice is what recess, if any, is added to it
 const HEX_DRIVES = [['hex', 'None'], ['slotted', 'Slotted'], ['phillips', 'Phillips'], ['pozidriv', 'Pozidriv'], ['jis', 'JIS']];
-const DRIVES_FOR = { hex: HEX_DRIVES, hexwasher: HEX_DRIVES };   // shapes with their own drive list   // carriage bolts: usually none, but some carry a slot, so the normal list applies   // heads whose drive is a given
+// socket cap heads: a hex socket first, as nearly all are, but the same profile comes with Torx, Torx Plus and others (plastics screws)
+const SOCKET_DRIVES = [['hex', 'Hex'], ...DRIVES.filter(d => d[0] !== 'hex')];
+const DRIVES_FOR = { hex: HEX_DRIVES, hexwasher: HEX_DRIVES, socket: SOCKET_DRIVES };   // shapes with their own drive list   // carriage bolts: usually none, but some carry a slot, so the normal list applies   // heads whose drive is a given
 // materials: [key, name, finishes]; a finish is stored as `${material}-${finish}` (plain = the bare material key)
 const MAT_SCREW = [
   ['steel', 'Steel', [['blackoxide', 'black oxide'], ['brass', 'brass plated'], ['bronze', 'bronze plated'], ['cadmium', 'cadmium'], ['chrome', 'chrome'], ['nickel', 'nickel'], ['galvanized', 'galvanized'], ['zinc', 'zinc'], ['zincyellow', 'zinc yellow chromate'], ['tin', 'TiN'], ['ceramic', 'ceramic (exterior)']]],
