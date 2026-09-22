@@ -1,7 +1,7 @@
 # Partstore
 
 A small web app for keeping track of a fastener collection stored in drawer cabinets, and for printing the drawer labels.
-Each page is a class of fastener (imperial machine screws, metric machine screws, wood screws, sheet metal screws, …) laid out as
+Each page is a class of fastener (imperial machine screws, metric machine screws, wood & sheet metal screws, screws for plastic, …) laid out as
 a grid: rows are thread sizes, columns are lengths, and each cell records which head types you have at that size and length,
 which drawer they live in, and optionally the drive types and materials. Nuts, lock nuts, washers and lock washers get their
 own columns. Labels come out as PDFs sized for 9 mm tape on an Epson LabelWorks LW-PX900 (50 × 7 mm printable strip), in
