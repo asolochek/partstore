@@ -291,7 +291,7 @@ function shownTypes(c, types, universe, key) {   // the column's own types plus 
 }
 function cellTd(key, types, extraClass = '', universe = null) {
   const c = page().cells[key] || { types: [] };
-  const td = document.createElement('td'); td.className = 'cell ' + extraClass + (c.types.length ? ' have' : '');
+  const td = document.createElement('td'); td.className = 'cell ' + extraClass + (c.types.length ? ' have' : ''); td.dataset.key = key;
   const shown = universe ? shownTypes(c, types, universe, key) : types;
   const ic = document.createElement('div'); ic.className = 'icons' + (shown.length + (universe ? 1 : 0) > 9 ? ' dense' : '');
   for (const t of shown) ic.appendChild(iconEl(t, c.types.includes(t), key));
@@ -742,7 +742,14 @@ function hidePreview() { $('#preview').style.display = 'none'; }
 async function reload() {
   const [d, ic] = await Promise.all([fetch('/api/data').then(r => r.json()), fetch('/api/icons').then(r => r.json())]);
   if (data && d.rev === data.rev) return;
-  data = d; icons = ic; lastSaved = JSON.stringify(data); if (!pageId || !data.pages.some(p => p.id === pageId)) pageId = data.pages[0].id; render(); status('loaded');
+  data = d; icons = ic; lastSaved = JSON.stringify(data); if (!pageId || !data.pages.some(p => p.id === pageId)) pageId = data.pages[0].id;
+  // #page=…&key=…&type=… (from the Find page): that page, with that head's detail open
+  const h = new URLSearchParams(location.hash.slice(1)); if (h.get('page') && data.pages.some(p => p.id === h.get('page'))) pageId = h.get('page');
+  render(); status('loaded');
+  if (h.get('key')) { const key = h.get('key'), type = h.get('type');
+    setTimeout(() => { const cellEl = [...document.querySelectorAll('td, .card')].find(el => el.dataset.key === key); cellEl?.scrollIntoView({ block: 'center' });
+      if (type && cell(key)?.types.includes(type)) openDetail(key, type, Math.max(20, innerWidth / 2 - 150), 80); else if (cell(key)) openLoc(key, cell(key), cellTextClient(page(), key), Math.max(20, innerWidth / 2 - 150), 80);
+      try { history.replaceState(null, '', location.pathname); } catch (e) {} }, 50); }   // the hash has done its job
 }
 // pick up changes made elsewhere: the server announces every save, and the tab also checks when it comes back into view
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !saveTimer) reload(); });

@@ -38,6 +38,8 @@ td svg { width:22px; height:22px; vertical-align:middle; margin-right:4px; }
 .none { color:var(--ink2); }
 .tag { font-size:11px; color:var(--ink2); margin-left:6px; }
 #bar { display:flex; gap:12px; align-items:center; padding:8px 14px; border-top:1px solid var(--line); background:#fff; }
+#menu { position:fixed; background:#fff; border:1px solid var(--line); border-radius:6px; box-shadow:0 6px 24px rgba(0,0,0,.16); display:none; z-index:20; min-width:220px; font-size:13.5px; padding:4px 0; }
+#menu div { padding:6px 12px; cursor:pointer; } #menu div:hover { background:var(--paper); } #menu div.hd { color:var(--ink2); font-size:11px; text-transform:uppercase; letter-spacing:.04em; cursor:default; padding-top:8px; } #menu div.hd:hover { background:none; }
 #dlg { position:fixed; inset:0; background:rgba(0,0,0,.25); display:none; align-items:center; justify-content:center; z-index:10; }
 #dlg .box { background:#fff; border-radius:8px; padding:16px 18px; box-shadow:0 8px 40px rgba(0,0,0,.25); max-width:min(640px, calc(100vw - 28px)); max-height:calc(100vh - 28px); overflow:auto; box-sizing:border-box; }
 #dlg h2 { margin:0 0 10px; font-size:15px; }
@@ -66,6 +68,7 @@ td svg { width:22px; height:22px; vertical-align:middle; margin-right:4px; }
 </main>
 <div id="bar"><span id="count"></span><button id="move" class="go" disabled>Move ticked to…</button><button id="toPage" disabled title="put the ticked kinds on another page (its category), same size and length">Move ticked to page…</button><button id="printSel" disabled title="the label of each place a ticked line is in">PDF: ticked</button><button id="setCat" disabled title="make the ticked kinds another category">Set category…</button><button id="untick" disabled>Untick all</button><span class="none" id="hint">Each line is one kind of screw in one place; stock that is also kept somewhere else (overflow) has a line of its own, so it can move or stay.</span></div>
 <div id="dlg"><div class="box" id="dlgBox"></div></div>
+<div id="menu"></div>
 <script src="/model.js"></script>
 <script src="/print.js"></script>
 <script>
@@ -149,7 +152,8 @@ function render() {
       `<td>${icons.svg[r.type] || ''}${esc(r.headName)}${[...r.tips.filter(t => t !== 'blunt' && t !== 'pointed'), ...r.washers.map(w => 'w/ ' + w)].map(t => `<span class="tag">${t}</span>`).join('')}</td><td>${esc(drive) || '<span class="none">–</span>'}</td><td>${esc(mat) || '<span class="none">–</span>'}</td>` +
       `<td>${whereBadge(r)}${r.overflow ? '<span class="tag">overflow</span>' : ''}${r.whole && r.loc?.kind === 'drawer' ? '<span class="tag">whole drawer</span>' : ''}</td><td class="none">${esc(r.pageTitle)}</td></tr>`; }).join('') ||
     `<tr><td colspan="7" class="none" style="padding:24px">Nothing matches.</td></tr>`;
-  $('#rows').querySelectorAll('tr.row').forEach(tr => tr.onclick = () => { const id = tr.dataset.id; ticked.has(id) ? ticked.delete(id) : ticked.add(id); tr.classList.toggle('on', ticked.has(id)); tr.querySelector('input').checked = ticked.has(id); bar(); });
+  $('#rows').querySelectorAll('tr.row').forEach(tr => { tr.onclick = () => { const id = tr.dataset.id; ticked.has(id) ? ticked.delete(id) : ticked.add(id); tr.classList.toggle('on', ticked.has(id)); tr.querySelector('input').checked = ticked.has(id); bar(); };
+    tr.oncontextmenu = e => { e.preventDefault(); lineMenu(rows.find(r => r.id === tr.dataset.id), e.clientX, e.clientY); }; });
   bar();
 }
 // a place, drawn as on the other pages: in the colours of the item's category (a bin on coloured tape: the tape)
@@ -246,6 +250,19 @@ function openToPage() {
   show(); $('#dlg').style.display = 'flex';
 }
 $('#toPage').onclick = openToPage;
+// right-click a line: act on just that line (the bulk dialogs, with only it ticked), or open its head's detail on the grid,
+// which is where drives, materials, tip, washers and places are edited
+function lineMenu(r, x, y) {
+  const m = $('#menu'), only = () => { ticked.clear(); ticked.add(r.id); render(); };
+  const items = [['hd', `${r.size} · ${r.headName}`],
+    ['Edit on the grid…', () => { location.href = `/#page=${encodeURIComponent(r.pageId)}&key=${encodeURIComponent(r.key)}&type=${encodeURIComponent(r.type)}`; }],
+    ['Set category…', () => { only(); openSetCat(); }], ['Move to…', () => { only(); openMove(); }], ['Move to page…', () => { only(); openToPage(); }],
+    ['Print its label', () => printLabels({ places: [{ page: r.pageId, key: r.key, slot: r.loc ? M.slotOf(r.loc) : '' }] })]];
+  m.innerHTML = items.map(([a, b]) => a === 'hd' ? `<div class="hd">${esc(b)}</div>` : `<div data-i="${items.indexOf([a, b])}">${esc(a)}</div>`).join('');
+  [...m.querySelectorAll('div:not(.hd)')].forEach((d, i) => d.onclick = () => { m.style.display = 'none'; items.filter(x => x[0] !== 'hd')[i][1](); });
+  m.style.display = 'block'; m.style.left = Math.min(x, innerWidth - 240) + 'px'; m.style.top = Math.min(y, innerHeight - m.offsetHeight - 10) + 'px';
+}
+document.addEventListener('pointerdown', e => { if (!$('#menu').contains(e.target)) $('#menu').style.display = 'none'; }, true);
 // the category of the ticked kinds (a screw is what it is on any page; the page's own category is only the default)
 function openSetCat() {
   const sel = shown.filter(r => ticked.has(r.id)); if (!sel.length) return;

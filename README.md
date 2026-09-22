@@ -79,7 +79,9 @@ records what has been printed.
   order, previewed before anything is saved), or everything into one named place. Only the ticked kinds move; the rest of
   their cells stay put. **Move ticked to page…** puts the ticked kinds on another page (and so in its category) at the same
   size and length, adding the row or length there if needed and converting inches to millimetres or back; each kind keeps its
-  head, drive, material and places. Undo takes a move back.
+  head, drive, material and places. Undo takes a move back. **Right-click a line** for the same actions on that line alone,
+  **PDF: ticked** for the labels of the ticked lines' places, and **Edit on the grid…**, which opens that head's detail panel
+  on the grid page (drives, materials, tip, washers, places).
 - **Cabinet** opens the drawer map, all pages at once, with a tab per physical cabinet (the Unassigned list is the same on every tab), each drawer badged with its category colour and number: every label
   is a card in its drawer half, bin, or the Unassigned column on the right. Drag a card to a half, a bin, "drop here for a
   new bin", or back to Unassigned. Dropping on an occupied half offers **Merge** (both become one label) or **Insert**,
