@@ -82,12 +82,14 @@ const DRIVE_NAME = { slotted: 'Slotted', phillips: 'Phillips', combo: 'Slotted +
 const MAT_NAME = { steel: 'Steel', stainless: 'Stainless', aluminum: 'Aluminum', brass: 'Brass', nylon: 'Nylon', ptfe: 'PTFE', phenolic: 'Phenolic', pei: 'PEI', polycarbonate: 'Polycarbonate', plastic: 'Plastic', fiber: 'Fiber', copper: 'Copper', bronze: 'Bronze' };
 const FIN_NAME = { blackoxide: 'black oxide', brass: 'brass plated', bronze: 'bronze plated', cadmium: 'cadmium', chrome: 'chrome', nickel: 'nickel', galvanized: 'galvanized', zinc: 'zinc', zincyellow: 'zinc yellow chromate', tin: 'tin / TiN', ceramic: 'ceramic (exterior)', ticn: 'TiCN', anodized: 'anodized', tinzinc: 'tin zinc', gold: 'gold' };
 const NONE = '(not recorded)';
+const FIXED = { tip: ['blunt', 'pointed', 'thread-cutting', 'self-drilling'] };   // chips that are always offered
 // the facets, in display order: [id, title, row -> value or list of values]
 const FACETS = [
   ['drive', 'Drive', r => r.drive ? (DRIVE_NAME[r.drive] || r.drive) : NONE],
   ['finish', 'Finish', r => r.material ? (r.finish ? (FIN_NAME[r.finish] || r.finish) : 'plain') : NONE],
   ['mat', 'Material', r => r.mat ? (MAT_NAME[r.mat] || r.mat) : NONE],
   ['head', 'Head / kind', r => r.headName],
+  ['washer', 'Captive washer', r => r.washers.length ? r.washers : 'none'],
   ['tip', 'Tip', r => r.tips],
   ['cat', 'Category', r => M.cabinetById(r.cat)?.title || '(none)'],
   ['page', 'Page', r => r.pageTitle],
@@ -110,8 +112,11 @@ function build() {
     const rowIx = Object.fromEntries((page.rows || []).map((r, i) => [r.id, i]));
     for (const key of M.populated(page)) for (const it of M.items(page, key)) {
       const [a, b] = key.split('|'), v = String(it.type || '').split(':'), flags = v.slice(1), [mat, finish] = String(it.material || '').split('-');
-      const tips = M.isList(page) || !it.type ? [] : [...(flags.includes('d') ? ['self-drilling'] : [flags.includes('p') ? 'pointed' : 'blunt', ...(flags.includes('c') ? ['thread-cutting'] : [])]), ...(flags.some(f => f[0] === 'w') ? ['captive washer'] : [])];
-      const base = { pageId: page.id, pageTitle: page.title, key, type: it.type, drive: it.drive, material: it.material, mat, finish, tips, whole: it.whole, cat: it.cat,
+      // tips: every choice is listed even when nothing has it yet, so a chip is there to tick; captive washers are a head modifier
+      const isScrew = !M.isList(page) && it.type && !['nut', 'washer', 'locknut', 'lockwasher'].includes(key.split('|')[1]);
+      const tips = !isScrew ? [] : flags.includes('d') ? ['self-drilling'] : [flags.includes('p') ? 'pointed' : 'blunt', ...(flags.includes('c') ? ['thread-cutting'] : [])];
+      const washers = flags.filter(f => f[0] === 'w').flatMap(f => [...f.slice(1)]).map(c => ({ k: 'countersunk', f: 'flat', s: 'split lock', e: 'external tooth', i: 'internal tooth' }[c] || c).concat(' washer'));
+      const base = { pageId: page.id, pageTitle: page.title, key, type: it.type, drive: it.drive, material: it.material, mat, finish, tips, washers, whole: it.whole, cat: it.cat,
         size: M.cellText(page, key), headName: M.isList(page) ? 'list item' : (icons.labels[v[0]] || icons.labels[it.type] || v[0] || NONE),
         order: [pageIx, rowIx[a] ?? 1e6, isNaN(+b) ? 1e6 : +b, String(b)] };
       const places = [[it.loc, false], ...it.overflow.map(l => [l, M.slotOf(l)])];
@@ -131,7 +136,7 @@ function render() {
   // a facet's counts are what ticking that value would list, given the other facets
   $('#facets').innerHTML = FACETS.map(f => {
     const counts = {}; for (const r of searched) if (passes(r, f[0])) for (const v of valuesOf(f, r)) counts[v] = (counts[v] || 0) + 1;
-    const all = new Set(rows.flatMap(r => valuesOf(f, r))), vals = [...all].sort((a, b) => (a === NONE) - (b === NONE) || a.localeCompare(b));
+    const all = new Set([...(FIXED[f[0]] || []), ...rows.flatMap(r => valuesOf(f, r))]), vals = [...all].sort((a, b) => (a === NONE) - (b === NONE) || a.localeCompare(b));
     return `<h3>${f[1]}</h3>` + vals.map(v => `<span class="chip${picked[f[0]]?.has(v) ? ' on' : ''}${counts[v] ? '' : ' zero'}" data-f="${f[0]}" data-v="${esc(v)}">${esc(v)} <i>${counts[v] || 0}</i></span>`).join('');
   }).join('');
   $('#facets').querySelectorAll('.chip').forEach(c => c.onclick = () => { const s = picked[c.dataset.f] = picked[c.dataset.f] || new Set(); s.has(c.dataset.v) ? s.delete(c.dataset.v) : s.add(c.dataset.v); render(); });
@@ -140,7 +145,7 @@ function render() {
   $('#rows').innerHTML = shown.map(r => { const first = r.pageId + r.key !== last; last = r.pageId + r.key;
     const drive = r.drive ? (DRIVE_NAME[r.drive] || r.drive) : '', mat = r.material ? [MAT_NAME[r.mat] || r.mat, r.finish ? (FIN_NAME[r.finish] || r.finish) : ''].filter(Boolean).join(', ') : '';
     return `<tr class="row${ticked.has(r.id) ? ' on' : ''}${first ? ' first' : ''}" data-id="${esc(r.id)}"><td><input type="checkbox" ${ticked.has(r.id) ? 'checked' : ''}></td><td class="size">${esc(r.size)}</td>` +
-      `<td>${icons.svg[r.type] || ''}${esc(r.headName)}${r.tips.filter(t => t !== 'blunt' && t !== 'pointed').map(t => `<span class="tag">${t}</span>`).join('')}</td><td>${esc(drive) || '<span class="none">–</span>'}</td><td>${esc(mat) || '<span class="none">–</span>'}</td>` +
+      `<td>${icons.svg[r.type] || ''}${esc(r.headName)}${[...r.tips.filter(t => t !== 'blunt' && t !== 'pointed'), ...r.washers.map(w => 'w/ ' + w)].map(t => `<span class="tag">${t}</span>`).join('')}</td><td>${esc(drive) || '<span class="none">–</span>'}</td><td>${esc(mat) || '<span class="none">–</span>'}</td>` +
       `<td>${whereBadge(r)}${r.overflow ? '<span class="tag">overflow</span>' : ''}${r.whole && r.loc?.kind === 'drawer' ? '<span class="tag">whole drawer</span>' : ''}</td><td class="none">${esc(r.pageTitle)}</td></tr>`; }).join('') ||
     `<tr><td colspan="7" class="none" style="padding:24px">Nothing matches.</td></tr>`;
   $('#rows').querySelectorAll('tr.row').forEach(tr => tr.onclick = () => { const id = tr.dataset.id; ticked.has(id) ? ticked.delete(id) : ticked.add(id); tr.classList.toggle('on', ticked.has(id)); tr.querySelector('input').checked = ticked.has(id); bar(); });
