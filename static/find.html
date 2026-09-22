@@ -154,8 +154,8 @@ function whereBadge(r) {
 }
 function bar() {
   const n = ticked.size, vis = shown.filter(r => ticked.has(r.id)).length;
-  $('#count').textContent = `${shown.length} of ${rows.length} listed · ${n} ticked${n !== vis ? ` (${n - vis} not in this list)` : ''}`;
-  $('#move').disabled = $('#untick').disabled = $('#toPage').disabled = !n; $('#all').checked = shown.length > 0 && vis === shown.length; $('#all').indeterminate = vis > 0 && vis < shown.length;
+  $('#count').textContent = `${shown.length} of ${rows.length} listed · ${vis} ticked${n !== vis ? ` (+${n - vis} ticked but hidden by the filter: not moved)` : ''}`;
+  $('#move').disabled = $('#toPage').disabled = !vis; $('#untick').disabled = !n; $('#all').checked = shown.length > 0 && vis === shown.length; $('#all').indeterminate = vis > 0 && vis < shown.length;
 }
 $('#all').onclick = () => { const on = $('#all').checked; for (const r of shown) on ? ticked.add(r.id) : ticked.delete(r.id); render(); };
 $('#untick').onclick = () => { ticked.clear(); render(); };
@@ -175,7 +175,7 @@ function boxes() {
   return out;
 }
 function openMove() {
-  const sel = rows.filter(r => ticked.has(r.id)); if (!sel.length) return;
+  const sel = shown.filter(r => ticked.has(r.id)); if (!sel.length) return;   // ticked lines the filter has since hidden are left out
   // screws of one size (one cell of one page) share a bin; different sizes never do unless everything goes to one place
   const groups = []; for (const r of sel) { let g = groups.find(g => g.pageId === r.pageId && g.key === r.key); if (!g) groups.push(g = { pageId: r.pageId, key: r.key, size: r.size, page: r.pageTitle, rows: [] }); g.rows.push(r); }
   const B = boxes();
@@ -217,7 +217,7 @@ $('#move').onclick = openMove;
 // to another page: the same size and length there (rows and lengths made as needed, inch <-> mm converted); the page's category
 // is then the screws' category. Both lines of an item (its overflow too) go together, since the whole item moves
 function openToPage() {
-  const sel = rows.filter(r => ticked.has(r.id)); if (!sel.length) return;
+  const sel = shown.filter(r => ticked.has(r.id)); if (!sel.length) return;
   const items = [...new Map(sel.map(r => [[r.pageId, r.key, r.type, r.drive, r.material].join('\n'), r])).values()];
   const pages = data.pages.filter(p => !M.isList(p) && items.some(r => r.pageId !== p.id)), listed = items.filter(r => M.isList(data.pages.find(p => p.id === r.pageId)));
   const cat = p => M.cabinetById(p.cabinet), catName = p => cat(p) ? `<span class="badge" style="background:${cat(p).color};color:${cat(p).fg}">${esc(cat(p).title)}</span>` : '<span class="none">no category</span>';
