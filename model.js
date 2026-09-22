@@ -333,8 +333,9 @@ const locText = (l, home) => !l ? '' : l.kind === 'bin' ? l.bin : prefixFor(l, h
 // container by name (a category's drawers, a box of bins, the loose bins) and give a number in it.
 // containers(d) -> [{ id, kind: 'drawer' | 'bin', title, cabinet | prefix }]
 function containers(d) {
-  const lay = layoutOf(d), out = categoriesOf(d).map(c => ({ id: `cat:${c.id}`, kind: 'drawer', cabinet: c.id, title: c.title }));
-  lay.cabinets.forEach((c, i) => { if (kindOf(c).bins) out.push({ id: `box:${boxPrefix(lay, i)}`, kind: 'bin', prefix: boxPrefix(lay, i), title: c.title, bins: kindOf(c).bins }); });
+  // titles say what kind of container it is, since a category and a box may share a name ("Construction Screws drawers" / "… box")
+  const lay = layoutOf(d), out = categoriesOf(d).map(c => ({ id: `cat:${c.id}`, kind: 'drawer', cabinet: c.id, title: `${c.title} drawers`, name: c.title }));
+  lay.cabinets.forEach((c, i) => { if (kindOf(c).bins) out.push({ id: `box:${boxPrefix(lay, i)}`, kind: 'bin', prefix: boxPrefix(lay, i), title: `${c.title} box`, name: c.title, bins: kindOf(c).bins }); });
   out.push({ id: 'box:B', kind: 'bin', prefix: 'B', title: 'Loose bins' });
   return out;
 }
@@ -349,7 +350,7 @@ function placeIn(container, text) {
   const h = (m[2] || '').toLowerCase();
   return { kind: 'drawer', cabinet: container.cabinet, drawer: m[1], half: /^(r|rear|b|back)$/.test(h) ? 'back' : /^(f|front)$/.test(h) ? 'front' : '' };
 }
-const boxTitle = bin => { const c = containers(current()).find(x => x.kind === 'bin' && x.prefix === String(bin)[0]); return c ? c.title : 'Bins'; };
+const boxTitle = bin => { const c = containers(current()).find(x => x.kind === 'bin' && x.prefix === String(bin)[0]); return c ? c.name || c.title : 'Bins'; };
 // a place in words: "12R" on its own category's page, "Metric 12R" elsewhere (the category's first word); a bin is its box's name
 // and its number, "Plastics box bin 5", or "bin 5" among the loose ones
 const locName = (l, home) => !l ? '' : l.kind === 'bin' ? (l.bin[0] === 'B' ? `bin ${l.bin.slice(1)}` : `${boxTitle(l.bin)} bin ${l.bin.slice(1)}`)
