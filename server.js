@@ -165,7 +165,7 @@ function drawerLabel(group) {
   const extra = pick.lines.length ? { spec: pick.sp, detX, detCenter: pick.lines.length === 1 } : {};
   const isList = group.length === 1 && M.isList(group[0].page);
   return { kind: 'drawer', pn: t.pn, value: pick.lines[0] || '', specs: pick.lines[1] || '', pinout: null, glyphSvg: t.types.length ? I.icons(t.types, pick.lay.rows) : null, glyphMaxW: pick.lay.maxW, ...extra,
-           generic: true, style, _tape: S.tape, _size: `${S.tape}x${S.len}`, _z: S, _n: t.types.length || (isList ? 1 : 0), _sig: t.sig, _slot: groupSlot(group) };
+           generic: true, style, _tape: S.tape, _size: `${S.tape}x${S.len}`, _z: S, _n: t.types.length || (isList ? 1 : 0) || (group.some(pt => pt.items.some(it => it.empty)) ? 1 : 0), _sig: t.sig, _slot: groupSlot(group) };
 }
 // an 18 mm bin label: everything in the bin, from every page. One entry: the size big with its details under it; several:
 // one line per entry at a size that fits (up to six lines)

@@ -378,7 +378,7 @@ function diaValue(dia) {   // major diameter in inches, for ordering
 function rowKey(p, r) { return [diaValue(r.dia), p.units === 'mm' && r.dia.startsWith('M') ? -r.pitch : r.pitch]; }   // metric: larger pitch (coarse) first; imperial: fewer threads (coarse) first
 function sortRows(p) { p.rows.sort((a, b) => { const [ka, pa] = rowKey(p, a), [kb, pb] = rowKey(p, b); return (ka - kb) || (pa - pb); }); }
 function rowKeys(p, r) {   // reading order within the row: lengths, then lock nut, nut, lock washer, washer (the server puts drawers first)
-  const has = k => (p.cells[k]?.types || []).length;
+  const has = k => (p.cells[k]?.types || []).length || M.reserved(p.cells[k]);   // a reserved place (location, no heads) is labelled too
   return [...lengths(p).map(l => `${r.id}|${l}`), ...HW.map(([, suffix, per]) => `${per === 'row' ? r.id : r.dia}|${suffix}`)].filter(has);
 }
 function rowEmpty(p, r) { return !Object.keys(p.cells).some(k => k.startsWith(r.id + '|') && (p.cells[k].types || []).length); }

@@ -113,6 +113,7 @@ function build() {
     for (const key of M.populated(page)) for (const it of M.items(page, key)) {
       const [a, b] = key.split('|'), v = String(it.type || '').split(':'), flags = v.slice(1), [mat, finish] = String(it.material || '').split('-');
       // tips: every choice is listed even when nothing has it yet, so a chip is there to tick; captive washers are a head modifier
+      if (it.empty) continue;   // a reserved place with nothing in it is not a screw
       const isScrew = !M.isList(page) && it.type && !['nut', 'washer', 'locknut', 'lockwasher'].includes(key.split('|')[1]);
       const tips = !isScrew ? [] : flags.includes('d') ? ['self-drilling'] : [flags.includes('p') ? 'pointed' : 'blunt', ...(flags.includes('c') ? ['thread-cutting'] : [])];
       const washers = flags.filter(f => f[0] === 'w').flatMap(f => [...f.slice(1)]).map(c => ({ k: 'countersunk', f: 'flat', s: 'split lock', e: 'external tooth', i: 'internal tooth' }[c] || c).concat(' washer'));

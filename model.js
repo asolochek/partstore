@@ -39,9 +39,11 @@ function cellText(page, key) {
 }
 // every cell key that has at least one type ticked, in reading order: row by row, left to right (lengths, then lock nuts,
 // nuts, lock washers, washers); a diameter's washer cells appear with the first row of that diameter
+const reserved = c => !!c && !(c.types || []).length && !!locOf(c);
 function populated(page) {
   if (isList(page)) return (page.items || []).filter(it => (it.text || '').trim()).map(it => it.id);
-  const out = [], has = k => page.cells[k]?.types?.length, seenDia = new Set();
+  // a cell counts when it has a head ticked, or a place of its own with nothing in it yet: a reserved drawer still gets a label
+  const out = [], has = k => page.cells[k]?.types?.length || reserved(page.cells[k]), seenDia = new Set();
   for (const row of page.rows) {
     for (const len of lengths(page)) { const k = screwKey(row, len); if (has(k)) out.push(k); }
     for (const [, suffix, per] of HW) {
@@ -179,6 +181,8 @@ function items(page, key) {
   const c = page.cells[key] || {}, out = [];
   const cellCat = catOf(c, 'cell') || [page.cabinet || '', ''];
   const cellLoc = locOf(c), cellOver = overflowOf(c);
+  // a reserved place (a location, no heads): one placeholder item, so the place is drawn and labelled
+  if (reserved(c)) return [{ key, type: '', drive: '', material: '', loc: fix(cellLoc), overflow: fixAll(cellOver), locLevel: 'cell', overLevel: cellOver.length ? 'cell' : '', whole: !!c.whole, cat: cellCat[0], catLevel: cellCat[1], empty: true }];
   for (const t of c.types || []) {
     const o = (c.detail || {})[t] || {};
     const typeLoc = locOf(o) || cellLoc, typeLL = locOf(o) ? 'type' : cellLoc ? 'cell' : '';
@@ -388,6 +392,6 @@ function drawerOrder(page, groups) {
   const key = g => { const c = g[0]; return c.kind === 'drawer' ? [0, cabIx(c.cabinet), +c.drawer, c.half === 'front' ? 1 : 0] : c.kind === 'bin' ? [1, 0, 0, 0] : [2, 0, 0, 0]; };
   return groups.map((g, i) => [g, key(g), i]).sort((a, b) => (a[1][0] - b[1][0]) || (a[1][1] - b[1][1]) || (a[1][2] - b[1][2]) || (a[1][3] - b[1][3]) || (a[2] - b[2])).map(x => x[0]);
 }
-const api = { setCategory, moveItems, cellOn, sortRows, kindOf, locName, containers, containerOf, numberIn, placeIn, boxTitle, bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
+const api = { reserved, setCategory, moveItems, cellOn, sortRows, kindOf, locName, containers, containerOf, numberIn, placeIn, boxTitle, bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
 if (typeof module !== 'undefined') module.exports = api; else window.M = api;   // the same file is served to the browser
 })();
