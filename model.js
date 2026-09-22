@@ -334,7 +334,8 @@ const locText = (l, home) => !l ? '' : l.kind === 'bin' ? l.bin : prefixFor(l, h
 // containers(d) -> [{ id, kind: 'drawer' | 'bin', title, cabinet | prefix }]
 function containers(d) {
   // titles say what kind of container it is, since a category and a box may share a name ("Construction Screws drawers" / "… box")
-  const lay = layoutOf(d), out = categoriesOf(d).map(c => ({ id: `cat:${c.id}`, kind: 'drawer', cabinet: c.id, title: `${c.title} drawers`, name: c.title }));
+  // a category with no drawers allotted is not a place; one with drawers is "<name> drawers", a box "<name> box"
+  const lay = layoutOf(d), P = positions(d), out = categoriesOf(d).filter(c => (P.ranges.find(r => r.id === c.id)?.count || 0) > 0).map(c => ({ id: `cat:${c.id}`, kind: 'drawer', cabinet: c.id, title: `${c.title} drawers`, name: c.title }));
   lay.cabinets.forEach((c, i) => { if (kindOf(c).bins) out.push({ id: `box:${boxPrefix(lay, i)}`, kind: 'bin', prefix: boxPrefix(lay, i), title: `${c.title} box`, name: c.title, bins: kindOf(c).bins }); });
   out.push({ id: 'box:B', kind: 'bin', prefix: 'B', title: 'Loose bins' });
   return out;
