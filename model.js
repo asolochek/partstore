@@ -235,6 +235,59 @@ function relocate(d, moves) {
   for (const [page, key] of touched.values()) foldCell(page, key);
   return [...touched.values()].map(([page, key]) => ({ pageId: page.id, key }));
 }
+// ---- moving items to another page (the Find page's "Move ticked to page…") ----
+// rows are ordered by major diameter, then pitch (metric: coarse first; imperial: fewer threads first)
+function diaValue(dia) {   // major diameter in inches
+  if (dia.startsWith('#')) { const t = dia.slice(1); if (/^0+$/.test(t)) return 0.06 - 0.013 * (t.length - 1); return 0.06 + 0.013 * +t; }
+  if (dia.endsWith('mm')) return parseFloat(dia) / 25.4;
+  if (dia.startsWith('M')) return +dia.slice(1) / 25.4; const [n, d] = dia.split('/'); return d ? n / d : +dia;
+}
+const rowKey = (p, r) => [diaValue(r.dia), p.units === 'mm' && r.dia.startsWith('M') ? -r.pitch : r.pitch];
+function sortRows(p) { p.rows.sort((a, b) => { const [ka, pa] = rowKey(p, a), [kb, pb] = rowKey(p, b); return (ka - kb) || (pa - pb); }); }
+// the same cell on another page: the row is copied over if missing, a length converted between inches and mm (to 0.5 mm / 1/32")
+// and added to that page's lengths if missing. Returns the key there, or null when the cell is not a size × length or hardware cell
+function cellOn(from, to, key) {
+  const [a, b] = key.split('|'), row = from.rows.find(r => r.id === a), hw = HW.find(h => h[1] === b);
+  if (hw && hw[2] === 'dia') return key;   // washers go by diameter: same key
+  if (!row) return null;
+  if (!to.rows.some(r => r.id === row.id)) { to.rows.push({ ...row }); sortRows(to); }
+  if (hw) return key;
+  let len = +b; if (isNaN(len)) return null;
+  if ((from.units === 'mm') !== (to.units === 'mm')) len = to.units === 'mm' ? Math.round(len * 25.4 * 2) / 2 : Math.round(len / 25.4 * 32) / 32;
+  if (!lengths(to).includes(len)) { to.lengths = to.lengths || { start: len, stop: len, step: 1 }; to.lengths.skip = (to.lengths.skip || []).filter(x => x !== len); (to.lengths.extra = to.lengths.extra || []).push(len); }
+  return `${row.id}|${len}`;
+}
+// move items ({ pageId, key, type, drive, material }, grouped by item; overflow ignored: the whole item goes) to page `toId`.
+// A head that is already on the target cell takes the item in (drives/materials merged); the item's places travel with it,
+// spelled out per item, with a drawer of the old page's category named as such. Returns the cells touched on both pages.
+function moveItems(d, moves, toId) {
+  const to = d.pages.find(p => p.id === toId); if (!to || isList(to)) return [];
+  const touched = new Map(), key = m => [m.pageId, m.key, m.type, m.drive, m.material].join('\n'), done = new Set();
+  for (const m of moves) {
+    if (done.has(key(m))) continue; done.add(key(m));
+    const from = d.pages.find(p => p.id === m.pageId); if (!from || from === to || isList(from)) continue;
+    const eff = items(from, m.key).find(it => it.type === m.type && it.drive === m.drive && it.material === m.material); if (!eff) continue;
+    const k2 = cellOn(from, to, m.key); if (!k2) continue;
+    const c = from.cells[m.key], t = to.cells[k2] = to.cells[k2] || { types: [] };
+    if (!t.types.includes(m.type)) t.types.push(m.type);
+    t.detail = t.detail || {}; const td = t.detail[m.type] = t.detail[m.type] || {};
+    if (m.drive) { td.drives = td.drives || {}; td.drives[m.drive] = td.drives[m.drive] || []; if (m.material && !td.drives[m.drive].includes(m.material)) td.drives[m.drive].push(m.material); }
+    else if (m.material) { td.materials = td.materials || []; if (!td.materials.includes(m.material)) td.materials.push(m.material); }
+    // its places, at item level on the new page (a drawer stays in the category it was in)
+    const store = l => { const x = { ...l }; if (x.kind === 'drawer') { x.cabinet = x.cabinet || from.cabinet || ''; if (x.cabinet === (to.cabinet || '') || !x.cabinet) delete x.cabinet; if (!x.half) delete x.half; } return x; };
+    if (eff.loc || eff.overflow.length) { td.items = td.items || {}; const it = td.items[`${m.drive}|${m.material}`] = td.items[`${m.drive}|${m.material}`] || {}; if (eff.loc) it.loc = store(eff.loc); if (eff.overflow.length) it.overflow = eff.overflow.map(store); }
+    // and out of the old cell
+    const od = (c.detail || {})[m.type] || {};
+    if (m.drive && od.drives) { od.drives[m.drive] = (od.drives[m.drive] || []).filter(x => x !== m.material); if (!od.drives[m.drive].length) delete od.drives[m.drive]; if (!Object.keys(od.drives).length) delete od.drives; }
+    else if (m.material && od.materials) { od.materials = od.materials.filter(x => x !== m.material); if (!od.materials.length) delete od.materials; }
+    if (od.items) { delete od.items[`${m.drive}|${m.material}`]; if (!Object.keys(od.items).length) delete od.items; }
+    // the head leaves the old cell when nothing of it is left there (a head with no drive or material recorded is one item: it goes whole)
+    if ((!m.drive && !m.material) || !(Object.keys(od.drives || {}).length || (od.materials || []).length)) { c.types = c.types.filter(x => x !== m.type); if (c.detail) delete c.detail[m.type]; }
+    touched.set(from.id + '\n' + m.key, [from, m.key]); touched.set(to.id + '\n' + k2, [to, k2]);
+  }
+  for (const [page, key] of touched.values()) { if (page.cells[key] && !page.cells[key].types.length) delete page.cells[key]; else if (page.cells[key]) foldCell(page, key); }   // an emptied cell goes
+  return [...touched.values()].map(([page, key]) => ({ pageId: page.id, key }));
+}
 // when every item of a cell is in the same places, say so once, on the cell
 function foldCell(page, key) {
   if (isList(page)) return;
@@ -309,6 +362,6 @@ function drawerOrder(page, groups) {
   const key = g => { const c = g[0]; return c.kind === 'drawer' ? [0, cabIx(c.cabinet), +c.drawer, c.half === 'front' ? 1 : 0] : c.kind === 'bin' ? [1, 0, 0, 0] : [2, 0, 0, 0]; };
   return groups.map((g, i) => [g, key(g), i]).sort((a, b) => (a[1][0] - b[1][0]) || (a[1][1] - b[1][1]) || (a[1][2] - b[1][2]) || (a[1][3] - b[1][3]) || (a[2] - b[2])).map(x => x[0]);
 }
-const api = { kindOf, locName, containers, containerOf, numberIn, placeIn, boxTitle, bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
+const api = { moveItems, cellOn, sortRows, kindOf, locName, containers, containerOf, numberIn, placeIn, boxTitle, bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
 if (typeof module !== 'undefined') module.exports = api; else window.M = api;   // the same file is served to the browser
 })();

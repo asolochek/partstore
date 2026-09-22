@@ -64,7 +64,7 @@ td svg { width:22px; height:22px; vertical-align:middle; margin-right:4px; }
   <div id="facets"></div>
   <div id="results"><table><thead><tr><th><input type="checkbox" id="all" title="tick / untick everything listed"></th><th>Size</th><th>Head</th><th>Drive</th><th>Material</th><th>Where</th><th>Page</th></tr></thead><tbody id="rows"></tbody></table></div>
 </main>
-<div id="bar"><span id="count"></span><button id="move" class="go" disabled>Move ticked to…</button><button id="untick" disabled>Untick all</button><span class="none" id="hint">Each line is one kind of screw in one place; stock that is also kept somewhere else (overflow) has a line of its own, so it can move or stay.</span></div>
+<div id="bar"><span id="count"></span><button id="move" class="go" disabled>Move ticked to…</button><button id="toPage" disabled title="put the ticked kinds on another page (its category), same size and length">Move ticked to page…</button><button id="untick" disabled>Untick all</button><span class="none" id="hint">Each line is one kind of screw in one place; stock that is also kept somewhere else (overflow) has a line of its own, so it can move or stay.</span></div>
 <div id="dlg"><div class="box" id="dlgBox"></div></div>
 <script src="/model.js"></script>
 <script>
@@ -155,7 +155,7 @@ function whereBadge(r) {
 function bar() {
   const n = ticked.size, vis = shown.filter(r => ticked.has(r.id)).length;
   $('#count').textContent = `${shown.length} of ${rows.length} listed · ${n} ticked${n !== vis ? ` (${n - vis} not in this list)` : ''}`;
-  $('#move').disabled = $('#untick').disabled = !n; $('#all').checked = shown.length > 0 && vis === shown.length; $('#all').indeterminate = vis > 0 && vis < shown.length;
+  $('#move').disabled = $('#untick').disabled = $('#toPage').disabled = !n; $('#all').checked = shown.length > 0 && vis === shown.length; $('#all').indeterminate = vis > 0 && vis < shown.length;
 }
 $('#all').onclick = () => { const on = $('#all').checked; for (const r of shown) on ? ticked.add(r.id) : ticked.delete(r.id); render(); };
 $('#untick').onclick = () => { ticked.clear(); render(); };
@@ -214,6 +214,31 @@ function openMove() {
   recompute(); $('#dlg').style.display = 'flex';
 }
 $('#move').onclick = openMove;
+// to another page: the same size and length there (rows and lengths made as needed, inch <-> mm converted); the page's category
+// is then the screws' category. Both lines of an item (its overflow too) go together, since the whole item moves
+function openToPage() {
+  const sel = rows.filter(r => ticked.has(r.id)); if (!sel.length) return;
+  const items = [...new Map(sel.map(r => [[r.pageId, r.key, r.type, r.drive, r.material].join('\n'), r])).values()];
+  const pages = data.pages.filter(p => !M.isList(p) && items.some(r => r.pageId !== p.id)), listed = items.filter(r => M.isList(data.pages.find(p => p.id === r.pageId)));
+  const cat = p => M.cabinetById(p.cabinet), catName = p => cat(p) ? `<span class="badge" style="background:${cat(p).color};color:${cat(p).fg}">${esc(cat(p).title)}</span>` : '<span class="none">no category</span>';
+  $('#dlgBox').innerHTML = `<h2>Move ${items.length} kind${items.length === 1 ? '' : 's'} to another page</h2>
+    ${listed.length ? `<div class="err">${listed.length} of them are lines of a list page and cannot move this way.</div>` : ''}
+    <label>Page <select id="tpPage">${pages.map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('')}</select> <span id="tpCat"></span></label>
+    <div class="sub">Each kind keeps its size, length, head, drive, material and places; an inch length becomes the nearest 0.5 mm on a millimetre page and the reverse. Its size row and length are added to that page if it lacks them.</div>
+    <div class="plan" id="tpPlan"></div>
+    <div class="btns"><button id="tpCancel">Cancel</button><button id="tpGo" class="go">Move</button></div>`;
+  const show = () => { const to = data.pages.find(p => p.id === $('#tpPage').value); $('#tpCat').innerHTML = catName(to);
+    const going = items.filter(r => r.pageId !== to.id && !listed.includes(r));
+    $('#tpPlan').innerHTML = going.map(r => { const from = data.pages.find(p => p.id === r.pageId), k2 = M.cellOn({ ...from, rows: [...from.rows] }, { ...to, rows: [...to.rows], lengths: JSON.parse(JSON.stringify(to.lengths || {})) }, r.key);
+      return `<div><span><b>${esc(r.size)}</b> ${esc(r.headName)} <span class="none">${esc(from.title)}</span></span><span>→ ${k2 ? esc(M.cellText({ ...to, rows: [...to.rows, ...from.rows] }, k2)) : '<span class="err">cannot go</span>'}</span></div>`; }).join('') || '<div class="none">Everything ticked is on that page already.</div>';
+    $('#tpGo').disabled = !going.length; };
+  $('#tpPage').onchange = show; $('#tpCancel').onclick = () => { $('#dlg').style.display = 'none'; };
+  $('#tpGo').onclick = async () => { const to = $('#tpPage').value, before = JSON.stringify(data);
+    const n = M.moveItems(data, items.filter(r => !listed.includes(r)), to).length; $('#dlg').style.display = 'none';
+    if (await save(`moved to ${data.pages.find(p => p.id === to).title}; the labels that changed are under “PDF: unprinted”`)) { undoStack.push(before); if (undoStack.length > 30) undoStack.shift(); $('#undo').disabled = false; ticked.clear(); build(); render(); } };
+  show(); $('#dlg').style.display = 'flex';
+}
+$('#toPage').onclick = openToPage;
 $('#dlg').onclick = e => { if (e.target === $('#dlg')) $('#dlg').style.display = 'none'; };
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#dlg').style.display = 'none'; });
 async function save(what) {
