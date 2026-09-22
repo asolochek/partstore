@@ -368,7 +368,7 @@ app.post('/api/printed', (req, res) => {
 // bins: { "B3": [...] }, unassigned: [...] }. Each entry (one label): { text, page, pageId, keys, gap, overflow, whole, parts } where
 // page lists every page with stock on it, gap = a size's lengths here are not a contiguous run of the lengths that size has,
 // overflow = everything in this entry is overflow stock, whole = its stock is flagged as needing a whole drawer, parts = the
-// items behind it, each with its page and the level it got its location from
+// items behind it, each with its page, its category (cat) and the level it got its location from
 app.get('/api/cabinet', (req, res) => {
   const d = load(), bins = {}, unassigned = [];
   const cabinets = M.CABINETS.map(c => ({ ...c, drawers: {} }));
@@ -383,7 +383,7 @@ app.get('/api/cabinet', (req, res) => {
       const have = M.lengths(page).filter(l => (page.cells[`${row}|${l}`]?.types || []).length), idx = lens.map(l => have.indexOf(l)).sort((x, y) => x - y);
       for (let i = 1; i < idx.length; i++) if (idx[i] !== idx[i - 1] + 1) gap = true;
     }
-    const parts = g.flatMap(pt => pt.items.map(it => ({ key: it.key, pageId: pt.page.id, type: it.type, drive: it.drive, material: it.material, overflow: pt.overflow, level: pt.overflow ? it.overLevel : it.locLevel })));
+    const parts = g.flatMap(pt => pt.items.map(it => ({ key: it.key, pageId: pt.page.id, type: it.type, drive: it.drive, material: it.material, cat: it.cat, overflow: pt.overflow, level: pt.overflow ? it.overLevel : it.locLevel })));
     const titles = [...new Set(g.map(pt => pt.page.title))];
     const entry = { text: t.pn + (t.value ? '  ' + t.value : '') + (t.qual ? '  ' + t.qual : ''), page: titles.join(' · '), pageId: c.page.id, keys: g.map(pt => pt.key), gap,
                     overflow: g.every(pt => pt.overflow), whole: g.some(pt => pt.items.some(it => it.whole)), parts };

@@ -64,7 +64,7 @@ td svg { width:22px; height:22px; vertical-align:middle; margin-right:4px; }
   <div id="facets"></div>
   <div id="results"><table><thead><tr><th><input type="checkbox" id="all" title="tick / untick everything listed"></th><th>Size</th><th>Head</th><th>Drive</th><th>Material</th><th>Where</th><th>Page</th></tr></thead><tbody id="rows"></tbody></table></div>
 </main>
-<div id="bar"><span id="count"></span><button id="move" class="go" disabled>Move ticked to…</button><button id="toPage" disabled title="put the ticked kinds on another page (its category), same size and length">Move ticked to page…</button><button id="printSel" disabled title="the label of each place a ticked line is in">PDF: ticked</button><button id="untick" disabled>Untick all</button><span class="none" id="hint">Each line is one kind of screw in one place; stock that is also kept somewhere else (overflow) has a line of its own, so it can move or stay.</span></div>
+<div id="bar"><span id="count"></span><button id="move" class="go" disabled>Move ticked to…</button><button id="toPage" disabled title="put the ticked kinds on another page (its category), same size and length">Move ticked to page…</button><button id="printSel" disabled title="the label of each place a ticked line is in">PDF: ticked</button><button id="setCat" disabled title="make the ticked kinds another category">Set category…</button><button id="untick" disabled>Untick all</button><span class="none" id="hint">Each line is one kind of screw in one place; stock that is also kept somewhere else (overflow) has a line of its own, so it can move or stay.</span></div>
 <div id="dlg"><div class="box" id="dlgBox"></div></div>
 <script src="/model.js"></script>
 <script src="/print.js"></script>
@@ -89,6 +89,7 @@ const FACETS = [
   ['mat', 'Material', r => r.mat ? (MAT_NAME[r.mat] || r.mat) : NONE],
   ['head', 'Head / kind', r => r.headName],
   ['tip', 'Tip', r => r.tips],
+  ['cat', 'Category', r => M.cabinetById(r.cat)?.title || '(none)'],
   ['page', 'Page', r => r.pageTitle],
   ['where', 'Kept in', r => r.whereTags],
 ];
@@ -110,7 +111,7 @@ function build() {
     for (const key of M.populated(page)) for (const it of M.items(page, key)) {
       const [a, b] = key.split('|'), v = String(it.type || '').split(':'), flags = v.slice(1), [mat, finish] = String(it.material || '').split('-');
       const tips = M.isList(page) || !it.type ? [] : [...(flags.includes('d') ? ['self-drilling'] : [flags.includes('p') ? 'pointed' : 'blunt', ...(flags.includes('c') ? ['thread-cutting'] : [])]), ...(flags.some(f => f[0] === 'w') ? ['captive washer'] : [])];
-      const base = { pageId: page.id, pageTitle: page.title, key, type: it.type, drive: it.drive, material: it.material, mat, finish, tips, whole: it.whole,
+      const base = { pageId: page.id, pageTitle: page.title, key, type: it.type, drive: it.drive, material: it.material, mat, finish, tips, whole: it.whole, cat: it.cat,
         size: M.cellText(page, key), headName: M.isList(page) ? 'list item' : (icons.labels[v[0]] || icons.labels[it.type] || v[0] || NONE),
         order: [pageIx, rowIx[a] ?? 1e6, isNaN(+b) ? 1e6 : +b, String(b)] };
       const places = [[it.loc, false], ...it.overflow.map(l => [l, M.slotOf(l)])];
@@ -145,18 +146,17 @@ function render() {
   $('#rows').querySelectorAll('tr.row').forEach(tr => tr.onclick = () => { const id = tr.dataset.id; ticked.has(id) ? ticked.delete(id) : ticked.add(id); tr.classList.toggle('on', ticked.has(id)); tr.querySelector('input').checked = ticked.has(id); bar(); });
   bar();
 }
-// a place, drawn as on the other pages: a drawer in its category's colours; a bin in its box's tape colours, else its page's category's, else blue
+// a place, drawn as on the other pages: in the colours of the item's category (a bin on coloured tape: the tape)
 function whereBadge(r) {
   const l = r.loc; if (!l) return '<span class="none">unassigned</span>';
-  let bg = '#2f6db5', fg = '#ffffff';
-  if (l.kind === 'drawer') { const c = M.cabinetById(l.cabinet); if (c) { bg = c.color; fg = c.fg; } }
-  else { const z = M.labelSpec(data, l), c = M.cabinetById(data.pages.find(p => p.id === r.pageId)?.cabinet); if (!M.plainTape(z)) { bg = z.bg; fg = z.fg; } else if (c) { bg = c.color; fg = c.fg; } }   // a bin: its box's tape, else the page's category
+  const c = M.cabinetById(r.cat); let bg = c ? c.color : '#8a8f96', fg = c ? c.fg : '#ffffff';   // the item's category
+  if (l.kind === 'bin') { const z = M.labelSpec(data, l); if (!M.plainTape(z)) { bg = z.bg; fg = z.fg; } }   // a bin on coloured tape shows the tape
   return `<span class="badge" style="background:${bg};color:${fg}">${esc(M.numberIn(l))}</span> <span class="none">${esc(l.kind === 'drawer' ? (M.cabinetById(l.cabinet)?.title || '') + ' · ' : '')}${esc(placeName(l))}</span>`;
 }
 function bar() {
   const n = ticked.size, vis = shown.filter(r => ticked.has(r.id)).length;
   $('#count').textContent = `${shown.length} of ${rows.length} listed · ${vis} ticked${n !== vis ? ` (+${n - vis} ticked but hidden by the filter: not moved)` : ''}`;
-  $('#move').disabled = $('#toPage').disabled = $('#printSel').disabled = !vis; $('#untick').disabled = !n; $('#all').checked = shown.length > 0 && vis === shown.length; $('#all').indeterminate = vis > 0 && vis < shown.length;
+  $('#move').disabled = $('#toPage').disabled = $('#printSel').disabled = $('#setCat').disabled = !vis; $('#untick').disabled = !n; $('#all').checked = shown.length > 0 && vis === shown.length; $('#all').indeterminate = vis > 0 && vis < shown.length;
 }
 $('#all').onclick = () => { const on = $('#all').checked; for (const r of shown) on ? ticked.add(r.id) : ticked.delete(r.id); render(); };
 $('#untick').onclick = () => { ticked.clear(); render(); };
@@ -240,6 +240,20 @@ function openToPage() {
   show(); $('#dlg').style.display = 'flex';
 }
 $('#toPage').onclick = openToPage;
+// the category of the ticked kinds (a screw is what it is on any page; the page's own category is only the default)
+function openSetCat() {
+  const sel = shown.filter(r => ticked.has(r.id)); if (!sel.length) return;
+  const items = [...new Map(sel.map(r => [[r.pageId, r.key, r.type, r.drive, r.material].join('\n'), r])).values()];
+  $('#dlgBox').innerHTML = `<h2>Category of ${items.length} kind${items.length === 1 ? '' : 's'}</h2>
+    <label>Category <select id="scCat">${M.CABINETS.map(c => `<option value="${c.id}">${esc(c.title)}</option>`).join('')}</select></label>
+    <div class="sub">Changes what these screws are counted and coloured as. Their pages and places stay as they are.</div>
+    <div class="btns"><button id="scCancel">Cancel</button><button id="scGo" class="go">Set</button></div>`;
+  $('#scCancel').onclick = () => { $('#dlg').style.display = 'none'; };
+  $('#scGo').onclick = async () => { const before = JSON.stringify(data), c = M.cabinetById($('#scCat').value); M.setCategory(data, items, c.id); $('#dlg').style.display = 'none';
+    if (await save(`${items.length} kind${items.length === 1 ? '' : 's'} now ${c.title}`)) { undoStack.push(before); if (undoStack.length > 30) undoStack.shift(); $('#undo').disabled = false; build(); render(); } };
+  $('#dlg').style.display = 'flex';
+}
+$('#setCat').onclick = openSetCat;
 // the label of every place among the ticked lines (a label is per place, merged with whatever else is there); printer settings
 // are the ones chosen under Printer… on the grid page
 $('#printSel').onclick = () => { const sel = shown.filter(r => ticked.has(r.id)); if (sel.length) printLabels({ places: sel.map(r => ({ page: r.pageId, key: r.key, slot: r.loc ? M.slotOf(r.loc) : '' })) }); };

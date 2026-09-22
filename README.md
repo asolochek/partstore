@@ -67,6 +67,11 @@ records what has been printed.
   drawn in it, and each kind of tape prints as its own job, named in the "load the tape" prompt.
 - The **Plastic Thread-Forming Screws** page (class `plastic`) is for screws with no common size system: a row is the measured
   major diameter in mm (add `2.5`), or a trade size when the packet gives one (`#4-20`); lengths are in mm; heads start blunt.
+- **Category is a property of each screw.** A page has a default category (its bare drawer numbers mean that category's
+  drawers), and a cell, a head or one drive + material can say otherwise, in the location editor (right-click) or in bulk with
+  Find's **Set category…**. Badges on the grid, cards and bin badges on the map and Find's badges are coloured by the category
+  of what is there (a blend when a place holds several; grey for an empty bin or no category); a drawer tile's own badge is
+  the category its number belongs to.
 - **Find** lists every screw, nut and washer by what it is rather than where it is: one line per kind (size, head, drive,
   material and finish) per place it is kept, so overflow stock has a line of its own. Chips filter by drive, finish, material,
   head, tip, page and where it is kept (alternatives within a group, all groups together: Torx + ceramic or cadmium), the

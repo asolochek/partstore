@@ -74,7 +74,7 @@ main { display:flex; gap:16px; padding:0 14px; flex:1; min-height:0; }
 .card.whole { border-width:2px; border-color:var(--ink2); }
 .card.tape .pg { color:inherit; opacity:.75; }
 .card .pg { display:block; font-size:10px; color:var(--ink2); overflow:hidden; text-overflow:ellipsis; }
-.card.cat { border-left:5px solid var(--cat); }   /* unassigned: the category the card belongs to, in its colour */
+.card.cat { border-left:5px solid transparent; }   /* the category of what the card holds, in its colour (a gradient when mixed) */
 .card .pg.list { color:var(--accent); }
 #right { width:250px; flex:none; }
 #right > h2 { margin-top:0; }
@@ -285,7 +285,7 @@ function makeCard(card) {
   el.draggable = true; el.innerHTML = `${card.text}<span class="pg${card.list ? ' list' : ''}">${card.page}</span>`;
   // a card is drawn like its label: in the tape colours of the cabinet or box it is in, when those are not black on white
   if (card.from) { const z = M.labelSpec(data, card.from); if (!M.plainTape(z)) { el.style.background = z.bg; el.style.color = z.fg; el.classList.add('tape'); } }
-  if (!card.from) { const c = M.cabinetById(pageOf(card.pageId)?.cabinet); if (c) { el.classList.add('cat'); el.style.setProperty('--cat', c.color); } }
+  const cc = catColours(card.parts.map(p => p.cat || pageOf(p.pageId || card.pageId)?.cabinet || '')); el.classList.add('cat'); if (cc.bg.startsWith('linear')) { el.style.borderImage = `${cc.bg} 1`; el.style.borderImageWidth = '0 0 0 5px'; } else el.style.borderLeftColor = cc.bg;   // its category's colour (a blend when its parts differ)
   el.ondragstart = e => { dragging = card; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; };
   el.ondragend = () => { dragging = null; el.classList.remove('dragging'); document.querySelectorAll('.over').forEach(x => x.classList.remove('over')); };
   el.oncontextmenu = e => { e.preventDefault(); cardMenu(card, e.clientX, e.clientY); };
@@ -390,12 +390,14 @@ function halfMenu(cabId, i, x, y) {
   ]);
 }
 
+// the colours of a set of categories: one colour, a blend of several, grey for none
+function catColours(cats) { const cs = [...new Set(cats.filter(Boolean))].map(id => M.cabinetById(id)).filter(Boolean); if (!cs.length) return { bg: '#8a8f96', fg: '#ffffff' }; if (cs.length === 1) return { bg: cs[0].color, fg: cs[0].fg }; const n = cs.length; return { bg: `linear-gradient(90deg, ${cs.map((c, i) => `${c.color} ${i / n * 100}% ${(i + 1) / n * 100}%`).join(', ')})`, fg: '#ffffff' }; }
 // ---- rendering ----
 function binEl(id, entries) {
   const el = document.createElement('div'); el.className = 'bin'; el.title = M.locName({ kind: 'bin', bin: id }); el.innerHTML = `<span class="n">${id.slice(1)}</span>`;   // the number; the letter in the id is internal
   // the bin's badge: the tape colours of its box; when that is plain, the category of what is in it (if it is all one category); else blue
-  const z = M.labelSpec(data, { kind: 'bin', bin: id }), cats = [...new Set(entries.flatMap(e => e.parts.map(p => pageOf(p.pageId || e.pageId)?.cabinet || '')))], c = cats.length === 1 ? M.cabinetById(cats[0]) : null;
-  const n = el.firstChild; if (!M.plainTape(z)) { n.style.background = z.bg; n.style.color = z.fg; } else if (c) { n.style.background = c.color; n.style.color = c.fg; }
+  const z = M.labelSpec(data, { kind: 'bin', bin: id }), cats = entries.flatMap(e => e.parts.map(p => p.cat || pageOf(p.pageId || e.pageId)?.cabinet || ''));
+  const n = el.firstChild; if (!M.plainTape(z)) { n.style.background = z.bg; n.style.color = z.fg; } else { const cc = catColours(cats); n.style.background = cc.bg; n.style.color = cc.fg; }   // empty: grey
   for (const card of cardsOf(entries, { kind: 'bin', bin: id })) el.appendChild(makeCard(card));
   dropZone(el, card => dropOnBin(card, id)); return el;
 }

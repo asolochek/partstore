@@ -172,8 +172,12 @@ const inCabinet = (page, l) => !l || l.kind !== 'drawer' ? l : { ...l, cabinet: 
 // each item also says which level its location came from: locLevel / overLevel = 'item' | 'type' | 'cell' | '' (none)
 function items(page, key) {
   const fix = l => inCabinet(page, l), fixAll = ls => ls.map(fix);
-  if (isList(page)) { const it = listItem(page, key); return it ? [{ key, type: it.glyph || '', drive: '', material: '', loc: fix(locOf(it)), overflow: fixAll(overflowOf(it)), locLevel: locOf(it) ? 'cell' : '', overLevel: overflowOf(it).length ? 'cell' : '', whole: !!it.whole }] : []; }
+  // An item's category (a screw is a construction screw whatever page it is on): item.cat, else its head's, else its cell's,
+  // else the page's default (page.cabinet). catLevel says where it came from.
+  const catOf = (o, from) => o?.cat ? [o.cat, from] : null;
+  if (isList(page)) { const it = listItem(page, key); return it ? [{ key, type: it.glyph || '', drive: '', material: '', loc: fix(locOf(it)), overflow: fixAll(overflowOf(it)), locLevel: locOf(it) ? 'cell' : '', overLevel: overflowOf(it).length ? 'cell' : '', whole: !!it.whole, cat: it.cat || page.cabinet || '', catLevel: it.cat ? 'cell' : '' }] : []; }
   const c = page.cells[key] || {}, out = [];
+  const cellCat = catOf(c, 'cell') || [page.cabinet || '', ''];
   const cellLoc = locOf(c), cellOver = overflowOf(c);
   for (const t of c.types || []) {
     const o = (c.detail || {})[t] || {};
@@ -187,7 +191,8 @@ function items(page, key) {
       const it = (o.items || {})[`${d}|${m}`] || {};
       const loc = locOf(it) || typeLoc, locLevel = locOf(it) ? 'item' : typeLL;
       const over = overflowOf(it).length ? overflowOf(it) : (locOf(it) ? [] : typeOver), overLevel = overflowOf(it).length ? 'item' : (!locOf(it) ? typeOL : '');
-      out.push({ key, type: t, drive: d, material: m, loc: fix(loc), overflow: fixAll(over), locLevel, overLevel, whole: !!c.whole });
+      const [cat, catLevel] = catOf(it, 'item') || catOf(o, 'type') || cellCat;
+      out.push({ key, type: t, drive: d, material: m, loc: fix(loc), overflow: fixAll(over), locLevel, overLevel, whole: !!c.whole, cat, catLevel });
     }
   }
   return out;
@@ -275,7 +280,7 @@ function moveItems(d, moves, toId) {
     else if (m.material) { td.materials = td.materials || []; if (!td.materials.includes(m.material)) td.materials.push(m.material); }
     // its places, at item level on the new page (a drawer stays in the category it was in)
     const store = l => { const x = { ...l }; if (x.kind === 'drawer') { x.cabinet = x.cabinet || from.cabinet || ''; if (x.cabinet === (to.cabinet || '') || !x.cabinet) delete x.cabinet; if (!x.half) delete x.half; } return x; };
-    if (eff.loc || eff.overflow.length) { td.items = td.items || {}; const it = td.items[`${m.drive}|${m.material}`] = td.items[`${m.drive}|${m.material}`] || {}; if (eff.loc) it.loc = store(eff.loc); if (eff.overflow.length) it.overflow = eff.overflow.map(store); }
+    if (eff.loc || eff.overflow.length || eff.cat !== (to.cabinet || '')) { td.items = td.items || {}; const it = td.items[`${m.drive}|${m.material}`] = td.items[`${m.drive}|${m.material}`] || {}; if (eff.loc) it.loc = store(eff.loc); if (eff.overflow.length) it.overflow = eff.overflow.map(store); if (eff.cat !== (to.cabinet || '')) it.cat = eff.cat; }   // it stays what it is
     // and out of the old cell
     const od = (c.detail || {})[m.type] || {};
     if (m.drive && od.drives) { od.drives[m.drive] = (od.drives[m.drive] || []).filter(x => x !== m.material); if (!od.drives[m.drive].length) delete od.drives[m.drive]; if (!Object.keys(od.drives).length) delete od.drives; }
@@ -285,7 +290,26 @@ function moveItems(d, moves, toId) {
     if ((!m.drive && !m.material) || !(Object.keys(od.drives || {}).length || (od.materials || []).length)) { c.types = c.types.filter(x => x !== m.type); if (c.detail) delete c.detail[m.type]; }
     touched.set(from.id + '\n' + m.key, [from, m.key]); touched.set(to.id + '\n' + k2, [to, k2]);
   }
-  for (const [page, key] of touched.values()) { if (page.cells[key] && !page.cells[key].types.length) delete page.cells[key]; else if (page.cells[key]) foldCell(page, key); }   // an emptied cell goes
+  for (const [page, key] of touched.values()) { if (page.cells[key] && !page.cells[key].types.length) delete page.cells[key]; else if (page.cells[key]) { foldCell(page, key); setCategory(d, [], null); } }   // an emptied cell goes
+  return [...touched.values()].map(([page, key]) => ({ pageId: page.id, key }));
+}
+// setCategory(d, items: [{ pageId, key, type, drive, material }], catId): each item's category, written at its own level;
+// a cell whose items then all agree carries it once (or nothing, when it is the page's default)
+function setCategory(d, its, catId) {
+  const touched = new Map();
+  for (const m of its) {
+    const page = d.pages.find(p => p.id === m.pageId); if (!page) continue;
+    let o; if (isList(page)) o = listItem(page, m.key); else { const c = page.cells[m.key]; if (!c) continue; c.detail = c.detail || {}; const t = c.detail[m.type] = c.detail[m.type] || {}; t.items = t.items || {}; o = t.items[`${m.drive}|${m.material}`] = t.items[`${m.drive}|${m.material}`] || {}; }
+    if (!o) continue; o.cat = catId; touched.set(page.id + '\n' + m.key, [page, m.key]);
+  }
+  for (const [page, key] of touched.values()) {
+    if (isList(page)) { const it = listItem(page, key); if (it && it.cat === (page.cabinet || '')) delete it.cat; continue; }
+    const c = page.cells[key], its2 = items(page, key); if (!c || !its2.length) continue;
+    if (its2.every(it => it.cat === its2[0].cat)) {
+      for (const t of Object.values(c.detail || {})) { delete t.cat; for (const [ik, it] of Object.entries(t.items || {})) { delete it.cat; if (!Object.keys(it).length) delete t.items[ik]; } if (t.items && !Object.keys(t.items).length) delete t.items; }
+      if (its2[0].cat && its2[0].cat !== (page.cabinet || '')) c.cat = its2[0].cat; else delete c.cat;
+    }
+  }
   return [...touched.values()].map(([page, key]) => ({ pageId: page.id, key }));
 }
 // when every item of a cell is in the same places, say so once, on the cell
@@ -362,6 +386,6 @@ function drawerOrder(page, groups) {
   const key = g => { const c = g[0]; return c.kind === 'drawer' ? [0, cabIx(c.cabinet), +c.drawer, c.half === 'front' ? 1 : 0] : c.kind === 'bin' ? [1, 0, 0, 0] : [2, 0, 0, 0]; };
   return groups.map((g, i) => [g, key(g), i]).sort((a, b) => (a[1][0] - b[1][0]) || (a[1][1] - b[1][1]) || (a[1][2] - b[1][2]) || (a[1][3] - b[1][3]) || (a[2] - b[2])).map(x => x[0]);
 }
-const api = { moveItems, cellOn, sortRows, kindOf, locName, containers, containerOf, numberIn, placeIn, boxTitle, bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
+const api = { setCategory, moveItems, cellOn, sortRows, kindOf, locName, containers, containerOf, numberIn, placeIn, boxTitle, bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
 if (typeof module !== 'undefined') module.exports = api; else window.M = api;   // the same file is served to the browser
 })();

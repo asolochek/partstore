@@ -219,11 +219,14 @@ const halfText = h => h === 'back' ? 'rear' : h === 'front' ? 'front' : '';
 // summary of what is set on an object holding loc/overflow: "drawer 12 rear +B3", "bin B2", or the fallback text
 // a set location is drawn as a badge: a drawer in the colours of its category's drawer-number labels; a bin in the tape colours
 // of its box, or when that is plain black on white in the colours of this page's category (blue for a page without one)
-function locBadge(el, o) {
+// a set location is drawn as a badge in the colours of the category of what is there (a cell's badge: its items' category, or
+// a blend when they differ), grey for none
+function catColours(cats) { const cs = [...new Set(cats)].map(id => M.cabinetById(id)).filter(Boolean); if (!cs.length) return { bg: '#8a8f96', fg: '#ffffff' }; if (cs.length === 1) return { bg: cs[0].color, fg: cs[0].fg }; const n = cs.length; return { bg: `linear-gradient(90deg, ${cs.map((c, i) => `${c.color} ${i / n * 100}% ${(i + 1) / n * 100}%`).join(', ')})`, fg: '#ffffff' }; }
+function locBadge(el, o, key) {
   const l = M.locOf(o); if (!l) return el;
-  let bg = '#2f6db5', fg = '#ffffff';
-  if (l.kind === 'drawer') { const c = M.cabinetById(l.cabinet || page().cabinet); if (!c) return el; bg = c.color; fg = c.fg; }
-  else { const z = M.labelSpec(data, l), c = M.cabinetById(page().cabinet); if (!M.plainTape(z)) { bg = z.bg; fg = z.fg; } else if (c) { bg = c.color; fg = c.fg; } }
+  const its = key ? M.items(page(), key) : [], c = page().cells?.[key];
+  const mine = !c || o === c ? its : its.filter(it => c.detail?.[it.type] === o || c.detail?.[it.type]?.items?.[`${it.drive}|${it.material}`] === o);
+  const { bg, fg } = catColours((mine.length ? mine : its).map(it => it.cat || page().cabinet || ''));
   el.classList.add('badge'); el.style.background = bg; el.style.color = fg; return el;
 }
 function locSummary(o, fallback = '') {
@@ -236,12 +239,13 @@ const catOptions = sel => M.CABINETS.map(c => `<option value="${c.id}" ${c.id ==
 function openLoc(key, target, title, x, y, back) {
   // a place = where (a category's drawers, a box of bins, the loose bins: chosen by name) + its number there
   const C = M.containers(data), home = page().cabinet || '', prim0 = M.locOf(target), over0 = M.overflowOf(target);
-  const dflt = prim0 ? M.containerOf(prim0, home) : (home ? `cat:${home}` : C[0].id);
+  const cat0 = target.cat || (key && M.items(page(), key)[0]?.cat) || home, dflt = prim0 ? M.containerOf(prim0, home) : (cat0 ? `cat:${cat0}` : C[0].id);
   const row = (cls, l, fallback) => { const sel = l ? M.containerOf(l, home) : fallback;
     return `<div class="locrow"><select class="${cls}C">${C.map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${c.title}</option>`).join('')}</select><input type="text" class="${cls}N" value="${M.numberIn(l)}" placeholder="${cls === 'lp' ? 'e.g. 12R' : 'number'}"></div>`; };
   $('#pop').innerHTML = `<h3>Location · ${title}</h3>
     <h4>Primary</h4>${row('lp', prim0, dflt)}
     <h4>Overflow</h4><div id="popOverRows">${[...over0, null].map(l => row('lo', l, 'box:B')).join('')}</div>
+    <h4>Category</h4><select id="popCat" style="width:100%;font:inherit;padding:3px 4px"><option value="">${target === page().cells?.[key] || M.isList(page()) ? `(the page's: ${M.cabinetById(page().cabinet)?.title || 'none'})` : '(as the level above)'}</option>${M.CABINETS.map(c => `<option value="${c.id}" ${target.cat === c.id ? 'selected' : ''}>${c.title}</option>`).join('')}</select>
     <div class="note">Drawers: the number, then R (rear) or F (front) if divided. Bins: just the number. ${target === page().cells?.[key] || M.isList(page()) ? 'Leave the number empty for no place.' : 'An empty primary means: wherever the level above is.'}</div>
     <div class="row"><button type="button" id="popGo">Save</button><button type="button" id="popMore" title="another overflow place">+ overflow</button><button type="button" id="popClose">Cancel</button></div>`;
   const done = () => { closePop(); if (back) back(); };
@@ -255,6 +259,7 @@ function openLoc(key, target, title, x, y, back) {
     delete target.drawer; delete target.half;   // the old fields
     if (prim) target.loc = prim; else delete target.loc;
     if (over.length) target.overflow = over; else delete target.overflow;
+    if ($('#popCat').value) target.cat = $('#popCat').value; else delete target.cat;
     save(); render(); done();
   };
   $('#popClose').onclick = done; placePop(x, y);
@@ -293,7 +298,7 @@ function cellTd(key, types, extraClass = '', universe = null) {
   if (universe && universe.some(sh => !shown.includes(defVariant(page(), sh)))) { const m = document.createElement('div'); m.className = 'more'; m.textContent = '…'; m.title = 'other head shapes'; m.onclick = e => openMore(key, universe, e.clientX, e.clientY); ic.appendChild(m); }
   td.appendChild(ic);
   const meta = document.createElement('div'); meta.className = 'meta';
-  const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(c) ? ' set' : ''); dr.textContent = locSummary(c, 'location?'); locBadge(dr, c); dr.title = 'where this cell lives (a head type or a drive+material can override it: right-click the icon)'; dr.onclick = e => openLoc(key, cell(key), cellTextClient(page(), key), e.clientX, e.clientY);
+  const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(c) ? ' set' : ''); dr.textContent = locSummary(c, 'location?'); locBadge(dr, c, key); dr.title = 'where this cell lives (a head type or a drive+material can override it: right-click the icon)'; dr.onclick = e => openLoc(key, cell(key), cellTextClient(page(), key), e.clientX, e.clientY);
   const pr = document.createElement('span'); pr.className = 'print'; pr.textContent = '⎙'; pr.title = 'PDF for this label'; pr.onclick = e => printCell(key, e.clientX, e.clientY);
   pr.onmouseenter = () => showPreview(key); pr.onmouseleave = hidePreview;
   meta.appendChild(dr); meta.appendChild(pr); td.appendChild(meta);
@@ -412,7 +417,7 @@ function renderMobile(p, lens) {
     if (universe && universe.some(sh => !shown.includes(defVariant(p, sh)))) { const m = document.createElement('div'); m.className = 'more'; m.textContent = '…'; m.onclick = e => openMore(key, universe, e.clientX, e.clientY); ic.appendChild(m); }
     card.appendChild(ic);
     const meta = document.createElement('div'); meta.className = 'meta';
-    const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(c) ? ' set' : ''); dr.textContent = locSummary(c, 'location?'); locBadge(dr, c); dr.onclick = e => openLoc(key, cell(key), cellTextClient(p, key), e.clientX, e.clientY);
+    const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(c) ? ' set' : ''); dr.textContent = locSummary(c, 'location?'); locBadge(dr, c, key); dr.onclick = e => openLoc(key, cell(key), cellTextClient(p, key), e.clientX, e.clientY);
     const pr = document.createElement('span'); pr.className = 'print'; pr.textContent = '⎙'; pr.onclick = e => printCell(key, e.clientX, e.clientY);
     meta.appendChild(dr); meta.appendChild(pr); card.appendChild(meta);
     g.appendChild(card);
@@ -432,7 +437,7 @@ function renderList(p) {
     const tx = document.createElement('input'); tx.type = 'text'; tx.value = it.text || ''; tx.placeholder = 'e.g. Banana plugs'; tx.oninput = () => { it.text = tx.value; tr.className = it.text.trim() ? 'have' : ''; save(); }; td('txt', tx);
     const dt = document.createElement('input'); dt.type = 'text'; dt.value = it.detail || ''; dt.placeholder = 'optional'; dt.oninput = () => { it.detail = dt.value; save(); }; td('det', dt);
     const gl = document.createElement('button'); gl.type = 'button'; gl.className = 'gl'; gl.innerHTML = it.glyph && icons.svg[it.glyph] ? icons.svg[it.glyph] : 'none'; gl.title = it.glyph ? (icons.labels[it.glyph] || it.glyph) : 'choose a glyph'; gl.onclick = e => openGlyph(it, e.clientX, e.clientY); td('', gl);
-    const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(it) ? ' set' : ''); dr.textContent = locSummary(it, 'location?'); locBadge(dr, it); dr.onclick = e => openLoc(it.id, it, it.text || 'this line', e.clientX, e.clientY); td('', dr);
+    const dr = document.createElement('span'); dr.className = 'drawer' + (M.locOf(it) ? ' set' : ''); dr.textContent = locSummary(it, 'location?'); locBadge(dr, it, it.id); dr.onclick = e => openLoc(it.id, it, it.text || 'this line', e.clientX, e.clientY); td('', dr);
     const img = document.createElement('img'); img.className = 'lpv'; img.alt = ''; img.dataset.src = `/api/preview.png?page=${encodeURIComponent(p.id)}&key=${encodeURIComponent(it.id)}`; img.src = img.dataset.src + '&t=' + Date.now(); if (!(it.text || '').trim()) img.style.visibility = 'hidden'; td('pv', img);
     const pr = document.createElement('span'); pr.className = 'print'; pr.textContent = '⎙'; pr.title = 'PDF for this label'; pr.onclick = e => printCell(it.id, e.clientX, e.clientY); pr.onmouseenter = () => showPreview(it.id); pr.onmouseleave = hidePreview; td('', pr);
     const rm = document.createElement('span'); rm.className = 'del'; rm.textContent = '×'; rm.title = 'remove this line'; rm.onclick = () => { if (!(it.text || '').trim() || confirm(`Remove "${it.text}"?`)) { p.items = p.items.filter(x => x !== it); save(); render(); } }; td('', rm);
