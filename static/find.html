@@ -64,9 +64,10 @@ td svg { width:22px; height:22px; vertical-align:middle; margin-right:4px; }
   <div id="facets"></div>
   <div id="results"><table><thead><tr><th><input type="checkbox" id="all" title="tick / untick everything listed"></th><th>Size</th><th>Head</th><th>Drive</th><th>Material</th><th>Where</th><th>Page</th></tr></thead><tbody id="rows"></tbody></table></div>
 </main>
-<div id="bar"><span id="count"></span><button id="move" class="go" disabled>Move ticked to…</button><button id="toPage" disabled title="put the ticked kinds on another page (its category), same size and length">Move ticked to page…</button><button id="untick" disabled>Untick all</button><span class="none" id="hint">Each line is one kind of screw in one place; stock that is also kept somewhere else (overflow) has a line of its own, so it can move or stay.</span></div>
+<div id="bar"><span id="count"></span><button id="move" class="go" disabled>Move ticked to…</button><button id="toPage" disabled title="put the ticked kinds on another page (its category), same size and length">Move ticked to page…</button><button id="printSel" disabled title="the label of each place a ticked line is in">PDF: ticked</button><button id="untick" disabled>Untick all</button><span class="none" id="hint">Each line is one kind of screw in one place; stock that is also kept somewhere else (overflow) has a line of its own, so it can move or stay.</span></div>
 <div id="dlg"><div class="box" id="dlgBox"></div></div>
 <script src="/model.js"></script>
+<script src="/print.js"></script>
 <script>
 // The Find page: every item of every page (size × length × head × drive × material), one line per place it is kept, filtered by
 // what it is rather than where it is, with ticks and a bulk move (M.relocate). Finding "Torx, ceramic or cadmium" and giving
@@ -155,7 +156,7 @@ function whereBadge(r) {
 function bar() {
   const n = ticked.size, vis = shown.filter(r => ticked.has(r.id)).length;
   $('#count').textContent = `${shown.length} of ${rows.length} listed · ${vis} ticked${n !== vis ? ` (+${n - vis} ticked but hidden by the filter: not moved)` : ''}`;
-  $('#move').disabled = $('#toPage').disabled = !vis; $('#untick').disabled = !n; $('#all').checked = shown.length > 0 && vis === shown.length; $('#all').indeterminate = vis > 0 && vis < shown.length;
+  $('#move').disabled = $('#toPage').disabled = $('#printSel').disabled = !vis; $('#untick').disabled = !n; $('#all').checked = shown.length > 0 && vis === shown.length; $('#all').indeterminate = vis > 0 && vis < shown.length;
 }
 $('#all').onclick = () => { const on = $('#all').checked; for (const r of shown) on ? ticked.add(r.id) : ticked.delete(r.id); render(); };
 $('#untick').onclick = () => { ticked.clear(); render(); };
@@ -239,6 +240,9 @@ function openToPage() {
   show(); $('#dlg').style.display = 'flex';
 }
 $('#toPage').onclick = openToPage;
+// the label of every place among the ticked lines (a label is per place, merged with whatever else is there); printer settings
+// are the ones chosen under Printer… on the grid page
+$('#printSel').onclick = () => { const sel = shown.filter(r => ticked.has(r.id)); if (sel.length) printLabels({ places: sel.map(r => ({ page: r.pageId, key: r.key, slot: r.loc ? M.slotOf(r.loc) : '' })) }); };
 $('#dlg').onclick = e => { if (e.target === $('#dlg')) $('#dlg').style.display = 'none'; };
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#dlg').style.display = 'none'; });
 async function save(what) {

@@ -293,7 +293,7 @@ async function sendPdf(res, labels, name, bins, group) {
 // the printed record key of a portion, and whether a group is already printed as it stands
 const printedKey = pt => `${pt.page.id}|${pt.key}`;
 // POST /api/labels -> PDF of 9 mm drawer labels: { page, keys: [...] | "all" | "new" [, slots: [...]] } or { drawers: "12-16, 20, 30R" }
-// (every page). Either may add group: "9x70" for the labels of that tape and length (see sendPdf). Bin labels come from a separate call: { bins: "all" | "B1, B3-5" | ["B1", ...] [, only: "new"] }.
+// (every page), or { places: [{ page, key, slot }] } (one label per distinct place). Any may add group: "9x70" for the labels of that tape and length (see sendPdf). Bin labels come from a separate call: { bins: "all" | "B1, B3-5" | ["B1", ...] [, only: "new"] }.
 // A page request whose cells also live in bins answers with X-Bins: the bins to fetch next (204 when there are only bins).
 app.post('/api/labels', async (req, res) => {
   const d = load(), all = allGroups(d);
@@ -312,6 +312,18 @@ app.post('/api/labels', async (req, res) => {
     const dk = g => [M.CABINETS.findIndex(c => c.id === g[0].cabinet), +g[0].drawer, g[0].half === 'front' ? 1 : 0];
     groups.sort((a, b) => { const [c, x, y] = dk(a), [e, u, v] = dk(b); return (c - e) || (x - u) || (y - v); });
     name = 'drawers-' + String(req.body.drawers).replace(/[^\w-]+/g, '_');
+  } else if (Array.isArray(req.body.places)) {
+    // { places: [{ page, key, slot }] } (the Find page): the label of each place named, once, however many lines share it
+    const seen = new Set();
+    for (const pl of req.body.places) {
+      const page = d.pages.find(p => p.id === pl.page); if (!page) continue;
+      for (const g of all) if (groupSlot(g) === (pl.slot || '') && g.some(pt => pt.page === page && pt.key === pl.key) && !seen.has(groupSlot(g) || `${page.id}|${pl.key}`)) { seen.add(groupSlot(g) || `${page.id}|${pl.key}`); groups.push(g); }
+    }
+    const first = d.pages.find(p => p.id === req.body.places[0]?.page) || d.pages[0];
+    groups = M.drawerOrder(first, groups);
+    bins = [...new Set(groups.filter(g => g[0].kind === 'bin').map(g => g[0].bin))];
+    groups = groups.filter(g => g[0].kind !== 'bin');
+    name = 'selection';
   } else {
     const page = d.pages.find(p => p.id === req.body.page);
     if (!page) return res.status(404).json({ error: 'no such page' });
