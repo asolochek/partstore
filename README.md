@@ -52,7 +52,7 @@ records what has been printed.
 - **Cabinets**: drawers are numbered per category, each from 1: Imperial machine screws (green), Metric machine screws
   (blue), Wood & sheet metal screws (red). Physically they fill a row of cabinets in that order, a category's numbering
   running on across cabinets (Imperial 65–88 are the top rows of cabinet 2). **Cabinets…** on the map sets the physical
-  cabinets (8 × 8 drawers, 4 × 4, 4 × 4 with three wide drawers down each side, or a 6 × 4, 6 × 2 or 4 × 3 box of bins), their order, and how many
+  cabinets (8 × 8 drawers, 4 × 4, 4 × 4 with three wide drawers down each side, or a 6 × 4, 6 × 2, 4 × 3 or 4 × 4 box of bins), their order, and how many
   drawers each category has; the last category takes the rest. Each box of bins numbers its bins from 1, and the loose bins have a numbering of their own. A page belongs
   to a category, so a drawer number on it means that category unless another is chosen. Places are always given as a name and a
   number: the location editor, the print panels and Find offer the categories, the boxes and the loose bins by name, and you
