@@ -71,7 +71,10 @@ function qualifier(pt) {
   const all = M.items(pt.page, pt.key), ds = new Set(), ms = new Set();
   const u = (list, f) => [...new Set(list.map(f).filter(Boolean))];
   for (const t of pt.types) {
-    const mine = pt.items.filter(i => i.type === t), whole = all.filter(i => i.type === t);
+    // only the same head kept in the same kind of container (drawers, or bins) needs telling apart: a bin in a box and a drawer
+    // are distinction enough, so a construction screw's bin label does not carry "Torx cad" because a drawer has the plain one
+    const same = i => M.slotOf(i.loc)[0] === M.slotOf(pt.items[0]?.loc || null)[0] || (!i.loc && !pt.items[0]?.loc);
+    const mine = pt.items.filter(i => i.type === t), whole = all.filter(i => i.type === t && (same(i) || i.overflow.some(o => M.slotOf(o)[0] === M.slotOf(pt.items[0]?.loc || null)[0])));
     if (mine.length >= whole.length) continue;
     const md = u(mine, i => i.drive), mm = u(mine, i => i.material);
     if (md.length && md.length < u(whole, i => i.drive).length) md.forEach(x => ds.add(M.DRIVE_SHORT[x] || x));
