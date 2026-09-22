@@ -79,17 +79,25 @@ const KINDS = {
   'bins4x3': { title: '4 × 3 box', cols: 4, rows: 3, drawers: 0, bins: 12 },
   'bins4x4': { title: '4 × 4 box', cols: 4, rows: 4, drawers: 0, bins: 16 },
 };
+// A custom box (kind 'custom') draws its own compartments: c.box = { cols, rows, cells: [{ x, y, w, h }] } on a grid of
+// equal units, each cell a rectangle of units, numbered 1.. in the order given (bins are that number after the box's letter).
+// kindOf(c) describes any cabinet the way a KINDS entry does, with cells for a custom one.
+function kindOf(c) {
+  if (c?.kind !== 'custom') return KINDS[c?.kind] || KINDS['8x8'];
+  const b = c.box || { cols: 4, rows: 3, cells: [] }, cells = (b.cells || []).filter(x => x.w > 0 && x.h > 0);
+  return { title: `custom box, ${cells.length} compartments`, cols: +b.cols || 4, rows: +b.rows || 3, drawers: 0, bins: cells.length, cells, custom: true };
+}
 const DEFAULT_LAYOUT = { cabinets: [{ id: 'c1', title: 'Cabinet 1', kind: '8x8' }, { id: 'c2', title: 'Cabinet 2', kind: '8x8' }, { id: 'c3', title: 'Cabinet 3', kind: '8x8' }], counts: { imperial: 88, metric: 64 } };
 const layoutOf = d => ({ ...DEFAULT_LAYOUT, ...(d?.layout || {}), cabinets: (d?.layout?.cabinets || DEFAULT_LAYOUT.cabinets), counts: { ...DEFAULT_LAYOUT.counts, ...(d?.layout?.counts || {}) } });
 // the physical positions: drawers numbered 1.. across the drawer cabinets in order. Bins are named by a letter and a
 // number: each box has its own letter (box.prefix: A1…A24), loose bins not in any box are B-numbered, so a box never
 // captures bins that already exist. The categories' prefixes (I, M, W, …) cannot be bin letters.
 const binLetters = () => { const taken = new Set(cats().map(c => c.prefix)); return 'ACDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter(ch => !taken.has(ch)); };   // not B (loose bins), not a category's prefix
-const boxPrefix = (lay, i) => lay.cabinets[i].prefix || binLetters()[lay.cabinets.slice(0, i).filter(c => (KINDS[c.kind] || {}).bins).length] || 'Z';
+const boxPrefix = (lay, i) => lay.cabinets[i].prefix || binLetters()[lay.cabinets.slice(0, i).filter(c => kindOf(c).bins).length] || 'Z';
 function positions(d) {
   const lay = layoutOf(d), out = [], bins = []; let pos = 0;
   lay.cabinets.forEach((c, cabIx) => {
-    const k = KINDS[c.kind] || KINDS['8x8'];
+    const k = kindOf(c);
     for (let i = 1; i <= k.drawers; i++) out.push({ pos: ++pos, cabIx, index: i, wide: !!k.wide && i > k.drawers - k.wide });
     if (k.bins) { const pre = boxPrefix(lay, cabIx); for (let i = 1; i <= k.bins; i++) bins.push({ bin: `${pre}${i}`, cabIx, index: i }); }
   });
@@ -129,7 +137,7 @@ function labelSpec(d, loc) {
 }
 // every label size in use, as "9x50" strings: the two defaults plus whatever the cabinets, boxes and loose bins set
 function labelSizes(d) {
-  const lay = layoutOf(d), out = [LABEL_DEFAULT.drawer, LABEL_DEFAULT.bin, cleanLabel(lay.loose?.label, 'bin'), ...lay.cabinets.map(c => cleanLabel(c.label, (KINDS[c.kind] || {}).bins ? 'bin' : 'drawer'))];
+  const lay = layoutOf(d), out = [LABEL_DEFAULT.drawer, LABEL_DEFAULT.bin, cleanLabel(lay.loose?.label, 'bin'), ...lay.cabinets.map(c => cleanLabel(c.label, kindOf(c).bins ? 'bin' : 'drawer'))];
   return [...new Set(out.map(z => `${z.tape}x${z.len}`))].sort((a, b) => parseInt(a) - parseInt(b) || +a.split('x')[1] - +b.split('x')[1]);
 }
 const cabinetById = id => cats().find(c => c.id === id);
@@ -249,7 +257,7 @@ const locText = (l, home) => !l ? '' : l.kind === 'bin' ? l.bin : prefixFor(l, h
 // containers(d) -> [{ id, kind: 'drawer' | 'bin', title, cabinet | prefix }]
 function containers(d) {
   const lay = layoutOf(d), out = categoriesOf(d).map(c => ({ id: `cat:${c.id}`, kind: 'drawer', cabinet: c.id, title: c.title }));
-  lay.cabinets.forEach((c, i) => { if ((KINDS[c.kind] || {}).bins) out.push({ id: `box:${boxPrefix(lay, i)}`, kind: 'bin', prefix: boxPrefix(lay, i), title: c.title, bins: KINDS[c.kind].bins }); });
+  lay.cabinets.forEach((c, i) => { if (kindOf(c).bins) out.push({ id: `box:${boxPrefix(lay, i)}`, kind: 'bin', prefix: boxPrefix(lay, i), title: c.title, bins: kindOf(c).bins }); });
   out.push({ id: 'box:B', kind: 'bin', prefix: 'B', title: 'Loose bins' });
   return out;
 }
@@ -301,6 +309,6 @@ function drawerOrder(page, groups) {
   const key = g => { const c = g[0]; return c.kind === 'drawer' ? [0, cabIx(c.cabinet), +c.drawer, c.half === 'front' ? 1 : 0] : c.kind === 'bin' ? [1, 0, 0, 0] : [2, 0, 0, 0]; };
   return groups.map((g, i) => [g, key(g), i]).sort((a, b) => (a[1][0] - b[1][0]) || (a[1][1] - b[1][1]) || (a[1][2] - b[1][2]) || (a[1][3] - b[1][3]) || (a[2] - b[2])).map(x => x[0]);
 }
-const api = { locName, containers, containerOf, numberIn, placeIn, boxTitle, bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
+const api = { kindOf, locName, containers, containerOf, numberIn, placeIn, boxTitle, bind, categoriesOf, recategorize, relocate, foldCell, DEFAULT_CATEGORIES, get CABINETS() { return cats(); }, get BIN_LETTERS() { return binLetters(); }, LABEL_FG, LABEL_BG, plainTape, colourName, tapeName, TAPES, LABEL_DEFAULT, LABEL_LEN, cleanLabel, labelSpec, labelSizes, KINDS, DEFAULT_LAYOUT, boxPrefix, binOrder, layoutOf, positions, positionOf, atPosition, cabinetById, cabinetByPrefix, inCabinet, isList, listItem, lengthText, lengths, screwKey, nutKey, washerKey, cellText, populated, items, portions, portionSlot, slotOf, locOf, overflowOf, locText, locLong, parseLoc, parseLocs, bins, drawerOrder, HW, MAT_SHORT, FIN_SHORT, matShort, DRIVE_SHORT };
 if (typeof module !== 'undefined') module.exports = api; else window.M = api;   // the same file is served to the browser
 })();

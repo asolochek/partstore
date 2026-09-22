@@ -169,7 +169,7 @@ const occupied = () => new Set(rows.filter(r => r.loc).map(r => M.slotOf(r.loc))
 // the boxes and the loose bins, as targets for "a bin each"
 function boxes() {
   const P = M.positions(data), out = [];
-  P.layout.cabinets.forEach((c, i) => { if (M.KINDS[c.kind]?.bins) out.push({ id: c.id, title: `${c.title} (${M.KINDS[c.kind].bins} bins)`, bins: P.bins.filter(b => b.cabIx === i).map(b => b.bin) }); });
+  P.layout.cabinets.forEach((c, i) => { if (M.kindOf(c).bins) out.push({ id: c.id, title: `${c.title} (${M.kindOf(c).bins} bins)`, bins: P.bins.filter(b => b.cabIx === i).map(b => b.bin) }); });
   const inBox = new Set(P.bins.map(b => b.bin)), loose = rows.filter(r => r.loc?.kind === 'bin' && !inBox.has(r.loc.bin)).map(r => parseInt(r.loc.bin.slice(1)) || 0);
   out.push({ id: '', title: 'Loose bins', bins: Array.from({ length: 400 }, (_, i) => `B${i + 1}`), from: Math.max(0, ...loose) + 1 });
   return out;

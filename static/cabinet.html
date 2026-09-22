@@ -36,6 +36,14 @@ main { display:flex; gap:16px; padding:0 14px; flex:1; min-height:0; }
 .tab { padding:5px 10px; border:1px solid var(--line); background:#fff; cursor:pointer; border-radius:4px; font-size:13px; }
 .tab.on { background:var(--ink); color:#fff; border-color:var(--ink); }
 #settings { position:fixed; top:56px; right:14px; background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 14px; box-shadow:0 4px 18px rgba(0,0,0,.12); display:none; z-index:15; width:max-content; max-width:calc(100vw - 28px); box-sizing:border-box; font-size:13.5px; max-height:calc(100vh - 70px); overflow:auto; }   /* as wide as its rows need; scrolls only when the window is too small for it. Opens under its button (placeSettings) */
+#design { position:fixed; inset:0; background:rgba(0,0,0,.25); display:none; align-items:center; justify-content:center; z-index:30; }
+#design .box { background:#fff; border-radius:8px; padding:16px 18px; box-shadow:0 8px 40px rgba(0,0,0,.25); max-width:calc(100vw - 28px); max-height:calc(100vh - 28px); overflow:auto; box-sizing:border-box; }
+#design h2 { margin:0 0 10px; font-size:15px; } #design .row { display:flex; gap:10px; align-items:center; margin:8px 0; flex-wrap:wrap; } #design .note { color:var(--ink2); font-size:12px; margin:6px 0; }
+#design input[type=number] { font:inherit; padding:3px 5px; border:1px solid var(--line); border-radius:4px; }
+#design .units { display:grid; gap:2px; position:relative; touch-action:none; user-select:none; background:var(--line); padding:2px; border-radius:4px; width:max-content; }
+#design .u { background:#fff; } #design .u.in { background:var(--none); } #design .u.sel { background:#cfe4cf; } #design .u.sel.bad { background:var(--bad); }
+#design .cell { background:var(--have); border:2px solid var(--ink2); border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:600; cursor:pointer; margin:1px; } #design .cell:hover { border-color:var(--bad2); color:var(--bad2); }
+#design .btns { display:flex; justify-content:flex-end; margin-top:12px; }
 #settings h3 { margin:8px 0 4px; font-size:13px; color:var(--ink2); }
 #settings table { border-collapse:collapse; width:100%; }
 #settings td { padding:3px 4px; white-space:nowrap; }
@@ -107,6 +115,7 @@ main { display:flex; gap:16px; padding:0 14px; flex:1; min-height:0; }
 </main>
 <div id="menu"></div>
 <div id="settings"></div>
+<div id="design"></div>
 <script src="/model.js"></script>
 <script src="/print.js"></script>
 <script>
@@ -402,9 +411,9 @@ function renderSettings() {
   const used = id => data.pages.some(p => p.cabinet === id) || Object.keys(cabOf(id)?.drawers || {}).length > 0;
   let h = `<b>Cabinets</b><div class="note">In physical order; drawer numbering runs across them, category by category.</div>
     <table><tr class="hd"><td>Name</td><td>Kind</td><td>Labels</td><td>Text on tape</td><td></td></tr>` +
-    lay.cabinets.map((c, i) => `<tr><td><input class="sTitle" data-i="${i}" value="${esc(c.title)}" style="width:130px"></td><td><select class="sKind" data-i="${i}">${Object.entries(M.KINDS).map(([k, v]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${v.title}</option>`).join('')}</select>` +
+    lay.cabinets.map((c, i) => `<tr><td><input class="sTitle" data-i="${i}" value="${esc(c.title)}" style="width:130px"></td><td><select class="sKind" data-i="${i}">${Object.entries(M.KINDS).map(([k, v]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${v.title}</option>`).join('')}<option value="custom" ${c.kind === 'custom' ? 'selected' : ''}>Custom box…</option></select>${c.kind === 'custom' ? ` <button type="button" class="sDesign" data-i="${i}" title="lay out the compartments">${M.kindOf(c).bins} compartments · Design…</button>` : ''}` +
       `</td>` +
-      `<td>${labelCell(i, c.label, M.KINDS[c.kind]?.bins ? 'bin' : 'drawer')}</td><td><button type="button" class="sUp" data-i="${i}" title="move up">↑</button><button type="button" class="sDn" data-i="${i}" title="move down">↓</button><button type="button" class="sRm" data-i="${i}" title="remove">×</button></td></tr>`).join('') +
+      `<td>${labelCell(i, c.label, M.kindOf(c).bins ? 'bin' : 'drawer')}</td><td><button type="button" class="sUp" data-i="${i}" title="move up">↑</button><button type="button" class="sDn" data-i="${i}" title="move down">↓</button><button type="button" class="sRm" data-i="${i}" title="remove">×</button></td></tr>`).join('') +
     `<tr><td>Loose bins</td><td class="note">B-numbered, not in any box</td><td>${labelCell('loose', lay.loose?.label, 'bin')}</td><td></td></tr></table>
     <div class="note">Labels: tape width × length, and the tape loaded for them. Changing either makes those labels count as unprinted; each kind of tape prints as its own job.</div>
     <div class="row"><button type="button" id="sAdd">Add cabinet</button></div>
@@ -422,7 +431,7 @@ function renderSettings() {
   const el = $('#settings'); el.innerHTML = h;
   const q = (cls, i) => el.querySelector(`.${cls}[data-i="${i}"]`);
   const readLabel = (o, i) => { const t = q('sTape', i); if (!t) return;
-    const kind = M.KINDS[o.kind]?.bins || i === 'loose' ? 'bin' : 'drawer', z = M.cleanLabel({ tape: t.value, len: q('sLen', i).value, fg: q('sFg', i).value, bg: q('sBg', i).value }, kind), def = M.LABEL_DEFAULT[kind];
+    const kind = M.kindOf(o).bins || i === 'loose' ? 'bin' : 'drawer', z = M.cleanLabel({ tape: t.value, len: q('sLen', i).value, fg: q('sFg', i).value, bg: q('sBg', i).value }, kind), def = M.LABEL_DEFAULT[kind];
     if (z.tape === def.tape && z.len === def.len && M.plainTape(z)) delete o.label; else { o.label = z; if (M.plainTape(z)) { delete z.fg; delete z.bg; } } };
   // the panel's fields -> { layout, categories }; letters that would clash (B, another category's, a box's) keep their old value
   const read = () => {
@@ -430,10 +439,11 @@ function renderSettings() {
     const cats = C.map((c, i) => ({ id: c.id, prefix: c.prefix, title: q('cTitle', i).value.trim() || c.title, color: q('cBg', i).value, fg: q('cFg', i).value }));
     // (letters are internal: a category keeps the one it has; a new box gets the first free one below, and keeps it)
     l.cabinets = [...el.querySelectorAll('.sTitle')].map((t, i) => { const c = { ...l.cabinets[i], title: t.value.trim() || l.cabinets[i].title, kind: q('sKind', i).value }; delete c.first;
-      if (!!M.KINDS[c.kind]?.bins === !!M.KINDS[l.cabinets[i].kind]?.bins) readLabel(c, i); else delete c.label;   // drawers <-> bins: back to that kind's default label
+      if (c.kind === 'custom' && !c.box) c.box = { cols: 4, rows: 3, cells: [] }; if (c.kind !== 'custom') delete c.box;
+      if (!!M.kindOf(c).bins === !!M.kindOf(l.cabinets[i]).bins) readLabel(c, i); else delete c.label;   // drawers <-> bins: back to that kind's default label
       return c; });
     // a box's bins are written with its letter, so the letter is fixed the moment the box exists (it must never shift when boxes are reordered)
-    const isBox = c => !!M.KINDS[c.kind]?.bins, taken = new Set(['B', ...cats.map(c => c.prefix), ...l.cabinets.filter(c => isBox(c) && c.prefix).map(c => c.prefix)]);
+    const isBox = c => !!M.kindOf(c).bins, taken = new Set(['B', ...cats.map(c => c.prefix), ...l.cabinets.filter(c => isBox(c) && c.prefix).map(c => c.prefix)]);
     data.layout?.cabinets?.forEach((c0, i) => { const c = l.cabinets.find(x => x.id === c0.id); if (c && isBox(c) && !c.prefix && isBox(c0)) { c.prefix = M.boxPrefix(M.layoutOf(data), i); taken.add(c.prefix); } });
     for (const c of l.cabinets) if (isBox(c) && !c.prefix) { c.prefix = 'ACDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find(ch => !taken.has(ch)) || 'Z'; taken.add(c.prefix); }
     l.loose = { ...(l.loose || {}) }; readLabel(l.loose, 'loose'); if (!Object.keys(l.loose).length) delete l.loose;
@@ -446,15 +456,51 @@ function renderSettings() {
   el.querySelectorAll('.sRm').forEach(b => b.onclick = () => { const st = read(); st.layout.cabinets.splice(+b.dataset.i, 1); restage(st); });
   $('#sAdd').onclick = () => { const st = read(), n = st.layout.cabinets.length + 1; st.layout.cabinets.push({ id: 'c' + Date.now().toString(36), title: `Cabinet ${n}`, kind: '8x8' }); restage(st); };
   // a new category goes last and takes "the rest", so the one that was last keeps the drawers it has now as a fixed count
-  $('#cAdd').onclick = () => { const st = read(), prev = C[last], taken = new Set(['B', ...st.categories.map(c => c.prefix), ...st.layout.cabinets.map((b, j) => M.KINDS[b.kind]?.bins ? M.boxPrefix(st.layout, j) : '')]);
+  $('#cAdd').onclick = () => { const st = read(), prev = C[last], taken = new Set(['B', ...st.categories.map(c => c.prefix), ...st.layout.cabinets.map((b, j) => M.kindOf(b).bins ? M.boxPrefix(st.layout, j) : '')]);
     st.layout.counts[prev.id] = P.ranges.find(r => r.id === prev.id).count;
     st.categories.push({ id: 'k' + Date.now().toString(36), prefix: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find(ch => !taken.has(ch)) || '', title: 'New category', color: '#5b6470', fg: '#ffffff' }); restage(st); };
   el.querySelectorAll('.cRm').forEach(b => b.onclick = () => { const st = read(), [gone] = st.categories.splice(+b.dataset.i, 1); delete st.layout.counts[gone.id]; restage(st); });
   el.querySelectorAll('.pCat').forEach(x => x.onchange = () => { const st = read(); M.recategorize(data.pages[+x.dataset.i], x.value); restage(st); });
   el.querySelectorAll('.sKind, .sCount, .cBg, .cFg').forEach(x => x.onchange = () => restage(read()));
+  el.querySelectorAll('.sDesign').forEach(b => b.onclick = () => { const st = read(); restage(st); designBox(data.layout.cabinets[+b.dataset.i], () => restage(read())); });
   $('#sSave').onclick = async () => { const st = read(); data.layout = st.layout; data.categories = st.categories; if (settingsBefore) { undoStack.push(settingsBefore); if (undoStack.length > 30) undoStack.shift(); $('#undo').disabled = false; }
     if (await commit('cabinets saved')) { settingsBefore = null; $('#settings').style.display = 'none'; } };
   $('#sClose').onclick = () => { $('#settings').style.display = 'none'; load(); };
+}
+// ---- custom box designer: compartments are rectangles painted on a grid of equal units ----
+// Drag across empty units to make a compartment; click a compartment to remove it; "Fill" makes every empty unit its own
+// compartment. Compartments are numbered in reading order of their top-left corner (row by row), which is the bin number.
+function designBox(cab, onChange) {
+  const box = cab.box = cab.box || { cols: 4, rows: 3, cells: [] };
+  const dlg = $('#design'); let drag = null;
+  const occ = () => { const m = Array.from({ length: box.rows }, () => Array(box.cols).fill(-1)); box.cells.forEach((c, i) => { for (let y = c.y; y < c.y + c.h; y++) for (let x = c.x; x < c.x + c.w; x++) if (m[y] && x < box.cols) m[y][x] = i; }); return m; };
+  const renumber = () => { box.cells.sort((a, b) => a.y - b.y || a.x - b.x); };
+  const clip = () => { box.cells = box.cells.filter(c => c.x < box.cols && c.y < box.rows).map(c => ({ ...c, w: Math.min(c.w, box.cols - c.x), h: Math.min(c.h, box.rows - c.y) })); renumber(); };
+  const draw = () => {
+    const m = occ(), u = Math.max(28, Math.min(64, Math.floor(560 / box.cols)));
+    dlg.innerHTML = `<div class="box"><h2>${esc(cab.title)}: compartments</h2>
+      <div class="row"><label>Grid <input type="number" id="dCols" min="1" max="16" value="${box.cols}" style="width:56px"> × <input type="number" id="dRows" min="1" max="16" value="${box.rows}" style="width:56px"> units</label>
+      <button type="button" id="dFill">Fill empty units 1 × 1</button><button type="button" id="dClear">Clear</button></div>
+      <div class="note">Drag across empty units to make a compartment (any rectangle). Click a compartment to remove it. They are numbered row by row from the top left.</div>
+      <div class="units" id="dGrid" style="grid-template-columns:repeat(${box.cols}, ${u}px);grid-auto-rows:${u}px">${m.flatMap((row, y) => row.map((v, x) => `<div class="u${v >= 0 ? ' in' : ''}" data-x="${x}" data-y="${y}" data-c="${v}"></div>`)).join('')}
+        ${box.cells.map((c, i) => `<div class="cell" data-i="${i}" style="grid-column:${c.x + 1} / span ${c.w};grid-row:${c.y + 1} / span ${c.h}">${i + 1}</div>`).join('')}</div>
+      <div class="note">${box.cells.length} compartments · ${m.flat().filter(v => v < 0).length} empty units</div>
+      <div class="btns"><button type="button" id="dDone">Done</button></div></div>`;
+    $('#dCols').onchange = $('#dRows').onchange = () => { box.cols = Math.max(1, Math.min(16, +$('#dCols').value || 1)); box.rows = Math.max(1, Math.min(16, +$('#dRows').value || 1)); clip(); draw(); };
+    $('#dFill').onclick = () => { const mm = occ(); for (let y = 0; y < box.rows; y++) for (let x = 0; x < box.cols; x++) if (mm[y][x] < 0) box.cells.push({ x, y, w: 1, h: 1 }); renumber(); draw(); };
+    $('#dClear').onclick = () => { box.cells = []; draw(); };
+    $('#dDone').onclick = () => { dlg.style.display = 'none'; onChange(); };
+    dlg.querySelectorAll('.cell').forEach(c => c.onclick = () => { box.cells.splice(+c.dataset.i, 1); draw(); });
+    const at = e => { const t = document.elementFromPoint(e.clientX, e.clientY)?.closest('.u'); return t ? { x: +t.dataset.x, y: +t.dataset.y } : null; };
+    const rect = (a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x) + 1, h: Math.abs(a.y - b.y) + 1 });
+    const free = r => { const mm = occ(); for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) if (mm[y][x] >= 0) return false; return true; };
+    const grid = $('#dGrid');
+    grid.onpointerdown = e => { const p = at(e); if (!p || occ()[p.y][p.x] >= 0) return; drag = { from: p, to: p }; grid.setPointerCapture(e.pointerId); show(); };
+    grid.onpointermove = e => { if (!drag) return; const p = at(e); if (p) { drag.to = p; show(); } };
+    grid.onpointerup = () => { if (!drag) return; const r = rect(drag.from, drag.to); drag = null; if (free(r)) { box.cells.push(r); renumber(); } draw(); };
+    const show = () => { const r = rect(drag.from, drag.to), ok = free(r); grid.querySelectorAll('.u').forEach(el => { const x = +el.dataset.x, y = +el.dataset.y; el.classList.toggle('sel', x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h); el.classList.toggle('bad', !ok); }); };
+  };
+  draw(); dlg.style.display = 'flex';
 }
 // under the Cabinets… button, its left edge on the button's, pulled back in where the window is too narrow for that
 function placeSettings() { const t = $('#settings'), r = $('#setupBtn').getBoundingClientRect(); t.style.right = 'auto'; t.style.top = `${Math.round(r.bottom + 8)}px`; t.style.maxHeight = `calc(100vh - ${Math.round(r.bottom + 8) + 14}px)`; t.style.left = `${Math.max(14, Math.min(r.left, window.innerWidth - t.offsetWidth - 14))}px`; }
@@ -484,12 +530,15 @@ function render() {
   const wrap = $('#cabinets'); wrap.innerHTML = '';
   lay.cabinets.forEach((pc, cabIx) => {
     if (hidden.has(pc.id)) return;
-    const kind = M.KINDS[pc.kind] || M.KINDS['8x8'];
+    const kind = M.kindOf(pc);
     const box = document.createElement('section'); box.className = 'cabinet';
     box.innerHTML = `<h2>${pc.title} <span class="note" style="font-weight:400;color:var(--ink2);font-size:12px">${kind.title}</span></h2>`;
     const g = document.createElement('div'); g.className = 'grid k' + pc.kind; box.appendChild(g); wrap.appendChild(box);
-    if (kind.bins) {   // a cabinet of bins: bin B(n) positions
-      for (const b of P.bins.filter(b => b.cabIx === cabIx)) g.appendChild(binEl(b.bin, cab.bins[b.bin] || []));
+    if (kind.bins) {   // a cabinet of bins: bin B(n) positions; a custom box places each compartment on its unit grid
+      if (kind.custom) { g.style.gridTemplateColumns = `repeat(${kind.cols}, 1fr)`; g.style.gridAutoRows = 'minmax(44px, auto)'; g.style.maxWidth = `${Math.min(1100, 230 * kind.cols)}px`; }
+      P.bins.filter(b => b.cabIx === cabIx).forEach((b, i) => { const el = binEl(b.bin, cab.bins[b.bin] || []);
+        if (kind.custom) { const c = kind.cells[i]; el.style.gridColumn = `${c.x + 1} / span ${c.w}`; el.style.gridRow = `${c.y + 1} / span ${c.h}`; }
+        g.appendChild(el); });
       return;
     }
     // drawers: the standard grid in reading order; a 4x4w's wide drawers are placed down the sides afterwards
