@@ -484,7 +484,7 @@ function designBox(cab, onChange) {
       <div class="row"><label>Grid <input type="number" id="dCols" min="1" max="16" value="${box.cols}" style="width:56px"> × <input type="number" id="dRows" min="1" max="16" value="${box.rows}" style="width:56px"> units</label>
       <button type="button" id="dFill">Fill empty units 1 × 1</button><button type="button" id="dClear">Clear</button></div>
       <div class="note">Drag across empty units to make a compartment (any rectangle). Click a compartment to remove it. They are numbered row by row from the top left.</div>
-      <div class="units" id="dGrid" style="grid-template-columns:repeat(${box.cols}, ${u}px);grid-auto-rows:${u}px">${m.flatMap((row, y) => row.map((v, x) => `<div class="u${v >= 0 ? ' in' : ''}" data-x="${x}" data-y="${y}" data-c="${v}"></div>`)).join('')}
+      <div class="units" id="dGrid" style="grid-template-columns:repeat(${box.cols}, ${u}px);grid-template-rows:repeat(${box.rows}, ${u}px)">${m.flatMap((row, y) => row.map((v, x) => `<div class="u${v >= 0 ? ' in' : ''}" data-x="${x}" data-y="${y}" data-c="${v}" style="grid-column:${x + 1};grid-row:${y + 1}"></div>`)).join('')}
         ${box.cells.map((c, i) => `<div class="cell" data-i="${i}" style="grid-column:${c.x + 1} / span ${c.w};grid-row:${c.y + 1} / span ${c.h}">${i + 1}</div>`).join('')}</div>
       <div class="note">${box.cells.length} compartments · ${m.flat().filter(v => v < 0).length} empty units</div>
       <div class="btns"><button type="button" id="dDone">Done</button></div></div>`;
